@@ -16,8 +16,8 @@ function getAccessToken($tokenUrl, $clientId, $clientSecret, $username, $passwor
             'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
             'method' => 'POST',
             'content' => http_build_query($data),
+            'ignore_errors' => true // Erlaubt es PHP, auch Fehlermeldungen von Akeneo zu lesen
         ],
-        // HIER: SSL-Zertifikatsprüfung für interne IP-Aufrufe ignorieren
         'ssl' => [
             'verify_peer' => false,
             'verify_peer_name' => false,
@@ -28,17 +28,25 @@ function getAccessToken($tokenUrl, $clientId, $clientSecret, $username, $passwor
     $result = file_get_contents($tokenUrl, false, $context);
 
     if ($result === FALSE) {
-        die('Fehler beim Abrufen des Access Tokens');
+        die('Fehler: Die Token-URL konnte nicht erreicht werden. Prüfe die API_BASE_URL / TOKEN_URL.');
     }
 
     $response = json_decode($result, true);
+
+    // Fehler abfangen, falls das JSON ungültig ist oder Akeneo einen Fehler meldet
+    if ($response === null || !isset($response['access_token'])) {
+        echo "<h3>API-Verbindungsfehler beim Token-Abruf</h3>";
+        echo "<strong>Antwort von Akeneo:</strong> <pre>" . htmlspecialchars($result) . "</pre>";
+        die();
+    }
+
     return $response['access_token'];
 }
 
 function getSKUsByCategories($baseUrl, $accessToken, $categoryCodes) {
     $allProducts = [];
     $page = 1;
-    $limit = 100; // Anzahl der Produkte pro Seite
+    $limit = 100;
 
     while (true) {
         $url = "$baseUrl/products?search=" . urlencode(json_encode([ 
@@ -51,9 +59,9 @@ function getSKUsByCategories($baseUrl, $accessToken, $categoryCodes) {
                     "Authorization: Bearer $accessToken",
                     "Content-Type: application/json"
                 ],
-                'method' => 'GET'
+                'method' => 'GET',
+                'ignore_errors' => true
             ],
-            // HIER: SSL-Zertifikatsprüfung auch für den Produkt-Abruf ignorieren
             'ssl' => [
                 'verify_peer' => false,
                 'verify_peer_name' => false,
@@ -64,25 +72,29 @@ function getSKUsByCategories($baseUrl, $accessToken, $categoryCodes) {
         $result = file_get_contents($url, false, $context);
 
         if ($result === FALSE) {
-            die("Fehler beim Abrufen der Produkte für die Kategorien " . implode(', ', $categoryCodes));
+            die("Fehler beim Abrufen der Produkte für die Kategorien.");
         }
 
         $response = json_decode($result, true);
 
-        // Wenn keine Produkte mehr vorhanden sind, breche die Schleife ab
+        // Fehler abfangen, falls beim Produkt-Abruf etwas schiefgeht
+        if ($response === null || isset($response['code'])) {
+            echo "<h3>API-Verbindungsfehler beim Produkt-Abruf</h3>";
+            echo "<strong>Antwort von Akeneo:</strong> <pre>" . htmlspecialchars($result) . "</pre>";
+            die();
+        }
+
         if (empty($response['_embedded']['items'])) {
             break;
         }
 
-        // Füge die Produkte zur Gesamtliste hinzu
         $allProducts = array_merge($allProducts, $response['_embedded']['items']);
 
-        // Wenn weniger Produkte als die angegebene Limitzahl zurückgegeben wurden, sind keine weiteren Seiten vorhanden
         if (count($response['_embedded']['items']) < $limit) {
             break;
         }
 
-        $page++; // Gehe zur nächsten Seite
+        $page++;
     }
 
     return $allProducts;
@@ -92,10 +104,9 @@ function getSKUsByCategories($baseUrl, $accessToken, $categoryCodes) {
 $accessToken = getAccessToken(TOKEN_URL, CLIENT_ID, CLIENT_SECRET, API_USERNAME, API_PASSWORD);
 
 // Hier kannst du mehrere Kategorien angeben
-$categoryCodes = ['series_name_mp','series_name_mp_sheet_cat', 'series_name_rmp', 'series_name_mp_flexit', 'series_europe_mp', 'series_name_rmp_ntk']; // Beispiel mit mehreren Kategorien
+$categoryCodes = ['series_name_mp','series_name_mp_sheet_cat', 'series_name_rmp', 'series_name_mp_flexit', 'series_europe_mp', 'series_name_rmp_ntk'];
 
 $products = getSKUsByCategories(API_BASE_URL, $accessToken, $categoryCodes);
-
 ?>
 
 <!DOCTYPE html>
@@ -116,11 +127,9 @@ $products = getSKUsByCategories(API_BASE_URL, $accessToken, $categoryCodes);
 
             <?php
             if (!empty($products)) {
-                // Arrays für aktive und deaktivierte Produkte
                 $activeProducts = [];
                 $disabledProducts = [];
 
-                // Teile Produkte in aktive und deaktivierte Produkte
                 foreach ($products as $product) {
                     if (isset($product['enabled']) && $product['enabled'] === false) {
                         $disabledProducts[] = $product;
@@ -129,7 +138,6 @@ $products = getSKUsByCategories(API_BASE_URL, $accessToken, $categoryCodes);
                     }
                 }
 
-                // Sortiere beide Arrays alphabetisch nach SKU
                 usort($activeProducts, function($a, $b) {
                     return strcasecmp($a['identifier'], $b['identifier']);
                 });
@@ -138,14 +146,12 @@ $products = getSKUsByCategories(API_BASE_URL, $accessToken, $categoryCodes);
                     return strcasecmp($a['identifier'], $b['identifier']);
                 });
 
-                // Ausgabe der aktiven Produkte
                 foreach ($activeProducts as $product) {
                     echo "<label>";
                     echo "<input type='checkbox' class='sku-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> " . htmlspecialchars($product['identifier']);
                     echo "</label>";
                 }
 
-                // Ausgabe der deaktivierten Produkte unter den aktiven Produkten
                 foreach ($disabledProducts as $product) {
                     echo "<label class='disabled'>";
                     echo "<input type='checkbox' class='sku-checkbox disabled-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> ";
@@ -170,10 +176,8 @@ $products = getSKUsByCategories(API_BASE_URL, $accessToken, $categoryCodes);
             selectedSKUs.push(checkbox.value);
         });
 
-        // Kombiniere die SKUs durch Komma getrennt
         if (selectedSKUs.length > 0) {
             var skuString = selectedSKUs.join(',');
-            // Erstelle einen versteckten Input für die skus und setze den kombinierten Wert
             var hiddenInput = document.createElement('input');
             hiddenInput.type = 'hidden';
             hiddenInput.name = 'skus';
