@@ -1,54 +1,19 @@
 version: '3.8'
 
 services:
-  # --- 1. DAS PHP FRONTEND & LOGIK ---
+  # --- NUR DAS PHP FRONTEND & LOGIK ---
   web_frontend:
     build: ./app
     container_name: akeneo_web_app
     restart: always
     ports:
-      - "${APP_PORT:-8085}:80"  # Dynamischer Port für die PHP-App
+      - "${APP_PORT:-8085}:80"  # Nutzt weiterhin deinen Port 8098 aus Portainer
     volumes:
       - ./app:/var/www/html
-    depends_on:
-      - internal_db
     environment:
-      - DB_HOST=internal_db
-      - DB_PASSWORD
       - API_BASE_URL
       - TOKEN_URL
       - API_USERNAME
       - API_PASSWORD
       - CLIENT_ID
       - CLIENT_SECRET
-
-  # --- 2. DIE INTERNE SQL DATENBANK ---
-  internal_db:
-    image: mariadb:10.11
-    container_name: akeneo_db
-    restart: always
-    environment:
-      - MYSQL_ROOT_PASSWORD=${DB_ROOT_PASSWORD:-root_passwort_hier}
-      - MYSQL_DATABASE=akeneo_utilities_db
-      - MYSQL_USER=akeneo_user
-      - MYSQL_PASSWORD=${DB_PASSWORD:-user_passwort_hier}
-    ports:
-      - "3306:3306"
-    volumes:
-      - db_data:/var/lib/mysql
-
-  # --- 3. PHPMYADMIN (DATENBANK-OBERFLÄCHE) ---
-  phpmyadmin:
-    image: phpmyadmin:5.2
-    container_name: akeneo_pma
-    restart: always
-    ports:
-      - "${PMA_PORT:-8086}:80"  # <-- HIER: Jetzt auch absolut dynamisch!
-    environment:
-      - PMA_HOST=internal_db
-      - UPLOAD_LIMIT=100M
-    depends_on:
-      - internal_db
-
-volumes:
-  db_data:
