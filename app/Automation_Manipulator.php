@@ -17,6 +17,11 @@ function getAccessToken($tokenUrl, $clientId, $clientSecret, $username, $passwor
             'method' => 'POST',
             'content' => http_build_query($data),
         ],
+        // HIER: SSL-Zertifikatsprüfung für interne IP-Aufrufe ignorieren
+        'ssl' => [
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+        ]
     ];
 
     $context = stream_context_create($options);
@@ -48,6 +53,11 @@ function getSKUsByCategories($baseUrl, $accessToken, $categoryCodes) {
                 ],
                 'method' => 'GET'
             ],
+            // HIER: SSL-Zertifikatsprüfung auch für den Produkt-Abruf ignorieren
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+            ]
         ];
 
         $context = stream_context_create($options);
@@ -94,15 +104,13 @@ $products = getSKUsByCategories(API_BASE_URL, $accessToken, $categoryCodes);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SKU Auswahl</title>
-  <link rel="stylesheet" href="styles.css">
-
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 
 <div class="container">
-    <h1>Wähle das  gewünschte aus</h1>
+    <h1>Wähle das gewünschte aus</h1>
 
- 
     <form id="skuForm" action="#" method="get">
         <div class="checkbox-list">
 
@@ -138,12 +146,12 @@ $products = getSKUsByCategories(API_BASE_URL, $accessToken, $categoryCodes);
                 }
 
                 // Ausgabe der deaktivierten Produkte unter den aktiven Produkten
-				foreach ($disabledProducts as $product) {
-					echo "<label class='disabled'>";
-					echo "<input type='checkbox' class='sku-checkbox disabled-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> ";
-					echo "<span class='disabled-text'>" . htmlspecialchars($product['identifier']) . " (Deaktiviert)</span>";
-					echo "</label>";
-				}
+                foreach ($disabledProducts as $product) {
+                    echo "<label class='disabled'>";
+                    echo "<input type='checkbox' class='sku-checkbox disabled-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> ";
+                    echo "<span class='disabled-text'>" . htmlspecialchars($product['identifier']) . " (Deaktiviert)</span>";
+                    echo "</label>";
+                }
             } else {
                 echo "<p>Keine Produkte in den angegebenen Kategorien gefunden.</p>";
             }
