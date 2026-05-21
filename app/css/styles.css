@@ -1,0 +1,85 @@
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f4f4f9;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 95vh;
+    overflow: hidden; /* Verhindert, dass der Hintergrund scrollt */
+}
+
+.container {
+    background-color: white;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    padding: 20px;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 500px;
+    max-height: 85vh; /* Maximale Höhe des Containers */
+    overflow-y: auto; /* Aktiviert das Scrollen, wenn der Inhalt die maximale Höhe überschreitet */
+}
+
+h1 {
+    text-align: center;
+    color: #333;
+}
+
+p {
+    font-size: 16px;
+    color: #555;
+}
+
+.checkbox-list {
+    margin: 20px 0;
+    max-height: 60vh; /* Maximale Höhe für die Checkbox-Liste */
+    overflow-y: auto; /* Scrollen innerhalb der Liste aktivieren */
+}
+
+label {
+    display: block;
+    margin: 8px 0;
+    font-size: 16px;
+    color: #333;
+}
+
+input[type="checkbox"] {
+    margin-right: 10px;
+}
+
+input[type="submit"] {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 10px 20px;
+    font-size: 16px;
+    cursor: pointer;
+    border-radius: 4px;
+    width: 100%;
+    margin-top: 10px;
+}
+
+input[type="submit"]:hover {
+    background-color: #45a049;
+}
+
+.disabled {
+    color: #d9534f;
+    font-weight: bold;
+}
+
+@media (max-width: 600px) {
+    .container {
+        padding: 15px;
+    }
+
+    h1 {
+        font-size: 24px;
+    }
+
+    input[type="submit"] {
+        padding: 12px 25px;
+        font-size: 18px;
+    }
+}
