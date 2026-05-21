@@ -1,91 +1,12 @@
 <?php
-// Konfiguration einbinden
-include('config.php'); // API-Konfiguration wird hier geladen
-
-function getAccessToken($tokenUrl, $clientId, $clientSecret, $username, $password) {
-    $data = [
-        'grant_type' => 'password',
-        'username' => $username,
-        'password' => $password,
-        'client_id' => $clientId,
-        'client_secret' => $clientSecret
-    ];
-
-    $options = [
-        'http' => [
-            'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
-            'method' => 'POST',
-            'content' => http_build_query($data),
-        ],
-    ];
-
-    $context = stream_context_create($options);
-    $result = file_get_contents($tokenUrl, false, $context);
-
-    if ($result === FALSE) {
-        die('Fehler beim Abrufen des Access Tokens');
-    }
-
-    $response = json_decode($result, true);
-    return $response['access_token'];
-}
-
-function getSKUsByFamily($baseUrl, $accessToken, $familyCode) {
-    $allProducts = [];
-    $page = 1;
-    $limit = 100; // Anzahl der Produkte pro Seite
-
-    while (true) {
-        $searchParams = json_encode([
-            'family' => [['operator' => 'IN', 'value' => [$familyCode]]]
-        ]);
-        $url = "$baseUrl/products?search=" . urlencode($searchParams) . "&page=$page&limit=$limit";
-
-        $options = [
-            'http' => [
-                'header' => [
-                    "Authorization: Bearer $accessToken",
-                    "Content-Type: application/json"
-                ],
-                'method' => 'GET'
-            ],
-        ];
-
-        $context = stream_context_create($options);
-        $result = file_get_contents($url, false, $context);
-
-        if ($result === FALSE) {
-            die("Fehler beim Abrufen der Produkte für die Familie $familyCode.");
-        }
-
-        $response = json_decode($result, true);
-
-        if (empty($response['_embedded']['items'])) {
-            break;
-        }
-
-        foreach ($response['_embedded']['items'] as $product) {
-            $allProducts[] = $product; // Alle Produkte, egal ob aktiviert oder deaktiviert
-        }
-
-        if (!isset($response['_links']['next'])) {
-            break;
-        }
-
-        $page++;
-    }
-
-    return $allProducts;
-}
-
-// Workflow
-$accessToken = getAccessToken(TOKEN_URL, CLIENT_ID, CLIENT_SECRET, API_USERNAME, API_PASSWORD);
+// Den zentralen Helfer einbinden (dieser lädt automatisch auch config.php)
+include('api_helper.php');
 
 // Produktfamilie definieren
 $familyCode = 'fiber_laser_cutting_machine';
 
-$products = getSKUsByFamily(API_BASE_URL, $accessToken, $familyCode);
-
+// Die zentrale Funktion aufrufen (Suchtyp ist 'family')
+$products = getAkeneoProducts('family', $familyCode);
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -93,7 +14,7 @@ $products = getSKUsByFamily(API_BASE_URL, $accessToken, $familyCode);
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SKU Auswahl</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="css/styles.css">
 </head>
 <body>
 <div class="container">
@@ -101,34 +22,17 @@ $products = getSKUsByFamily(API_BASE_URL, $accessToken, $familyCode);
     <form id="skuForm" action="#" method="get">
         <div class="checkbox-list">
             <?php
-            if (!empty($products)) {
-                $activeProducts = [];
-                $disabledProducts = [];
+            // Aktive Produkte ausgeben (kommen vorsortiert aus dem api_helper)
+            foreach ($products['active'] as $product) {
+                echo "<label><input type='checkbox' class='sku-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> " . htmlspecialchars($product['identifier']) . "</label>";
+            }
 
-                foreach ($products as $product) {
-                    if (isset($product['enabled']) && $product['enabled'] === false) {
-                        $disabledProducts[] = $product;
-                    } else {
-                        $activeProducts[] = $product;
-                    }
-                }
+            // Deaktivierte Produkte ausgeben (kommen ebenfalls vorsortiert)
+            foreach ($products['disabled'] as $product) {
+                echo "<label class='disabled'><input type='checkbox' class='sku-checkbox disabled-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> <span class='disabled-text'>" . htmlspecialchars($product['identifier']) . " (Deaktiviert)</span></label>";
+            }
 
-                usort($activeProducts, function($a, $b) {
-                    return strcasecmp($a['identifier'], $b['identifier']);
-                });
-
-                usort($disabledProducts, function($a, $b) {
-                    return strcasecmp($a['identifier'], $b['identifier']);
-                });
-
-                foreach ($activeProducts as $product) {
-                    echo "<label><input type='checkbox' class='sku-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> " . htmlspecialchars($product['identifier']) . "</label>";
-                }
-
-                foreach ($disabledProducts as $product) {
-                    echo "<label class='disabled'><input type='checkbox' class='sku-checkbox disabled-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> <span class='disabled-text'>" . htmlspecialchars($product['identifier']) . " (Deaktiviert)</span></label>";
-                }
-            } else {
+            if (empty($products['active']) && empty($products['disabled'])) {
                 echo "<p>Keine Produkte in der angegebenen Familie gefunden.</p>";
             }
             ?>
