@@ -7,7 +7,7 @@ services:
     container_name: akeneo_web_app
     restart: always
     ports:
-      - "8085:80"
+      - "${APP_PORT:-8085}:80"  # Dynamischer Port für die PHP-App
     volumes:
       - ./app:/var/www/html
     depends_on:
@@ -43,7 +43,7 @@ services:
     container_name: akeneo_pma
     restart: always
     ports:
-      - "8086:80"
+      - "${PMA_PORT:-8086}:80"  # <-- HIER: Jetzt auch absolut dynamisch!
     environment:
       - PMA_HOST=internal_db
       - UPLOAD_LIMIT=100M
