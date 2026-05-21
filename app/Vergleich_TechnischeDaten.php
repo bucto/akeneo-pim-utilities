@@ -4,17 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Produktattribute Matrix</title>
-    <link rel="stylesheet" href="vergleich.css">
+    <link rel="stylesheet" href="css/vergleich.css">
 </head>
 <body>
-    <h1>Vergleich der Produktattribute 2025</h1>
+    <h1>Vergleich der Produktattribute</h1>
 
     <?php
     // Konfigurationsdatei einbinden
     include 'config.php';
 
-    // Funktion, um ein Access Token zu erhalten
-    function getAccessToken($tokenUrl, $clientId, $clientSecret, $username, $password) {
+    /**
+     * Holt das Access Token (mit integriertem SSL-Fix für die interne IP)
+     */
+    function getMatrixAccessToken($tokenUrl, $clientId, $clientSecret, $username, $password) {
         $data = [
             'grant_type' => 'password',
             'username' => $username,
@@ -28,105 +30,96 @@
                 'header'  => "Content-Type: application/x-www-form-urlencoded\r\n",
                 'method'  => 'POST',
                 'content' => http_build_query($data),
+                'ignore_errors' => true
             ],
+            'ssl' => [
+                'verify_peer' => false,
+                'verify_peer_name' => false,
+            ]
         ];
 
         $context  = stream_context_create($options);
-        $result = file_get_contents($tokenUrl, false, $context);
+        $result = @file_get_contents($tokenUrl, false, $context);
 
         if ($result === FALSE) {
-            $error = error_get_last();
-            die('Fehler beim Abrufen des Access Tokens: ' . $error['message']);
+            die('Fehler beim Abrufen des Access Tokens. Bitte Netzwerkverbindung prüfen.');
         }
 
         $response = json_decode($result, true);
         if (!isset($response['access_token'])) {
-            die('Unerwartete Antwort vom Server: ' . print_r($response, true));
+            die('API-Fehler beim Token-Abruf: <pre>' . htmlspecialchars($result) . '</pre>');
         }
 
         return $response['access_token'];
     }
 
-    // Funktion, um Attributdetails abzurufen
-    function getAttributeDetails($baseUrl, $accessToken, $attributeCode, $locale = 'de_DE') {
-        $url = "$baseUrl/attributes/$attributeCode"; // URL für Attributdetails
-
+    /**
+     * Holt Übersetzungen für die Spaltenbeschriftungen (z.B. "Breite" statt "width")
+     */
+    function getMatrixAttributeDetails($baseUrl, $accessToken, $attributeCode) {
+        $url = "$baseUrl/attributes/$attributeCode";
         $options = [
             'http' => [
-                'header' => [
-                    "Authorization: Bearer $accessToken",
-                    "Content-Type: application/json"
-                ],
-                'method' => 'GET'
+                'header' => ["Authorization: Bearer $accessToken", "Content-Type: application/json"],
+                'method' => 'GET',
+                'ignore_errors' => true
             ],
+            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
         ];
 
         $context = stream_context_create($options);
-        $result = file_get_contents($url, false, $context);
+        $result = @file_get_contents($url, false, $context);
+        return $result ? json_decode($result, true) : null;
+    }
+
+    /**
+     * Holt alle Daten zu einer bestimmten Maschinen-SKU
+     */
+    function getMatrixProductAttributes($baseUrl, $accessToken, $sku, $locale = 'de_DE') {
+        $url = "$baseUrl/products/" . urlencode($sku) . "?locale=$locale";
+        $options = [
+            'http' => [
+                'header' => ["Authorization: Bearer $accessToken", "Content-Type: application/json"],
+                'method' => 'GET',
+                'ignore_errors' => true
+            ],
+            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
+        ];
+
+        $context = stream_context_create($options);
+        $result = @file_get_contents($url, false, $context);
 
         if ($result === FALSE) {
-            $error = error_get_last();
-            die('Fehler beim Abrufen der Attributdetails: ' . $error['message']);
+            die("Fehler: Das Produkt mit der SKU '" . htmlspecialchars($sku) . "' wurde im PIM nicht gefunden.");
         }
 
         return json_decode($result, true);
     }
 
-    // Funktion, um Produktattribute abzurufen (mit Sprache)
-    function getProductAttributes($baseUrl, $accessToken, $sku, $locale = 'de_DE') {
-        $url = "$baseUrl/products/$sku?locale=$locale"; // Produktdaten für die gegebene SKU abrufen
-
+    /**
+     * Holt die Klartext-Labels für Dropdown-Auswahllisten
+     */
+    function getMatrixAttributeOptions($baseUrl, $accessToken, $attributeCode) {
+        $url = "$baseUrl/attributes/$attributeCode/options?limit=100";
         $options = [
             'http' => [
-                'header' => [
-                    "Authorization: Bearer $accessToken",
-                    "Content-Type: application/json"
-                ],
-                'method' => 'GET'
+                'header' => ["Authorization: Bearer $accessToken", "Content-Type: application/json"],
+                'method' => 'GET',
+                'ignore_errors' => true
             ],
+            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
         ];
 
         $context = stream_context_create($options);
-        $result = file_get_contents($url, false, $context);
-
-        if ($result === FALSE) {
-            $error = error_get_last();
-            die('Fehler beim Abrufen der Produktattribute: ' . $error['message']);
-        }
-
-        return json_decode($result, true);
-    }
-
-    // Funktion, um Attributoptionen abzurufen
-    function getAttributeOptions($baseUrl, $accessToken, $attributeCode, $locale = 'de_DE') {
-        $url = "$baseUrl/attributes/$attributeCode/options"; // URL für Attributoptionen
-
-        $options = [
-            'http' => [
-                'header' => [
-                    "Authorization: Bearer $accessToken",
-                    "Content-Type: application/json"
-                ],
-                'method' => 'GET'
-            ],
-        ];
-
-        $context = stream_context_create($options);
-        $result = file_get_contents($url, false, $context);
-
-        if ($result === FALSE) {
-            $error = error_get_last();
-            return null; // Wenn die Optionen nicht existieren (404), einfach null zurückgeben
-        }
+        $result = @file_get_contents($url, false, $context);
+        if ($result === FALSE) return null;
 
         $response = json_decode($result, true);
 
-        // Wenn das Attribut 'pressbrake_drive' ist, dann prüfen wir speziell die Option
-        if ($attributeCode === 'pressbrake_drive') {
-            // Durch die Optionen gehen und den richtigen Namen zuordnen
+        // Spezifische Sonderbehandlung für 'pressbrake_drive'
+        if ($attributeCode === 'pressbrake_drive' && isset($response['_embedded']['items'])) {
             foreach ($response['_embedded']['items'] as &$option) {
                 if ($option['code'] === 'servo_hydraulic_press_brake') {
-                    // Setze die deutsche Bezeichnung für 'servo_hydraulic_press_brake'
                     $option['labels']['de_DE'] = 'Servo-Hydraulische Abkantpresse';
                 }
             }
@@ -135,115 +128,87 @@
         return $response;
     }
 
-    // Funktion, um numerische Werte zu formatieren (z. B. .0000 entfernen)
-    function formatNumericValue($value) {
-        // Überprüfe, ob der Wert eine Zahl ist
-        if (is_numeric($value)) {
-            // Wenn der Wert eine Ganzzahl oder Dezimalzahl mit .0000 ist, entferne den Dezimalteil
-            if (preg_match('/^\d+\.0+$/', $value)) {
-                $value = (int)$value; // Umwandlung in Ganzzahl entfernt .0000
-            }
+    /**
+     * Formatiert Zahlenwerte (entfernt unschöne .0000 Anhänge aus der Datenbank)
+     */
+    function formatMatrixNumericValue($value) {
+        if (is_numeric($value) && preg_match('/^\d+\.0+$/', $value)) {
+            return (int)$value;
         }
         return $value;
     }
 
-    // Workflow
-    if (isset($_GET['skus'])) {
-        $skus = explode(',', $_GET['skus']); // SKUs von der URL als Array
+    // Workflow & SKU-Auswertung aus der URL
+    if (isset($_GET['skus']) && !empty($_GET['skus'])) {
+        $skus = explode(',', $_GET['skus']);
     } else {
-        die('Keine SKUs übermittelt.');
+        die('Keine SKUs für den Vergleich übermittelt. Bitte gehe zurück zur Maschinenauswahl.');
     }
 
-    // 1. Access Token abrufen
-    $accessToken = getAccessToken(TOKEN_URL, CLIENT_ID, CLIENT_SECRET, API_USERNAME, API_PASSWORD);
+    // 1. Verbindung aufbauen
+    $accessToken = getMatrixAccessToken(TOKEN_URL, CLIENT_ID, CLIENT_SECRET, API_USERNAME, API_PASSWORD);
 
-    // 2. Alle Attribute für alle Produkte abrufen
+    // 2. Daten sammeln
     $attributes = [];
     $products = [];
-    $optionsMap = []; // Optionen Map außerhalb der Produkt Schleife definieren
+    $optionsMap = []; 
 
     foreach ($skus as $sku) {
-        $product = getProductAttributes(API_BASE_URL, $accessToken, $sku, 'de_DE'); // Die deutsche Sprache verwenden
+        $sku = trim($sku);
+        $product = getMatrixProductAttributes(API_BASE_URL, $accessToken, $sku, 'de_DE');
+        
+        if (!isset($product['values'])) {
+            continue;
+        }
+        
         $products[$sku] = $product['values'];
 
-        // Alle Attribute sammeln (nur einmal pro Produkt)
+        // Dynamisch alle vorkommenden Attribute registrieren
         foreach ($product['values'] as $attribute => $data) {
             if (!in_array($attribute, $attributes)) {
                 $attributes[] = $attribute;
             }
-        }
-
-        // Attributoptionen abrufen, wenn es Optionen gibt
-        foreach ($product['values'] as $attribute => $data) {
-            if ($data[0]['type'] === 'pim_catalog_option') {
-                $options = getAttributeOptions(API_BASE_URL, $accessToken, $attribute, 'de_DE');
-                foreach ($options['_embedded']['items'] as $option) {
-                    $optionsMap[$attribute][$option['code']] = $option['labels']['de_DE'];
+            
+            // BEHOBEN: Robuster Check auf Dropdown/Auswahllisten ohne die fehlerhafte `type`-Referenz
+            $rawVal = isset($data[0]['data']) ? $data[0]['data'] : null;
+            if ($rawVal && is_string($rawVal) && !is_numeric($rawVal) && !isset($optionsMap[$attribute])) {
+                $options = getMatrixAttributeOptions(API_BASE_URL, $accessToken, $attribute);
+                if (isset($options['_embedded']['items'])) {
+                    foreach ($options['_embedded']['items'] as $option) {
+                        $optionsMap[$attribute][$option['code']] = isset($option['labels']['de_DE']) ? $option['labels']['de_DE'] : $option['code'];
+                    }
                 }
             }
         }
     }
 
-    // 3. Matrix-Tabelle erstellen
-    echo '<table border="1">';
-    echo '<tr><th>Attribut</th>';
+    // 3. Ausgabe der HTML-Matrix
+    echo '<table border="1" style="border-collapse: collapse; width: 100%; text-align: left;">';
+    echo '<tr style="background-color: #f2f2f2;"><th style="padding: 10px;">Attribut</th>';
 
-    // Produkt-SKUs als Spaltenüberschriften
+    // SKUs als Spaltenköpfe ausgeben
     foreach ($skus as $sku) {
-        echo "<th>$sku</th>";
+        echo "<th style='padding: 10px;'>" . htmlspecialchars($sku) . "</th>";
     }
     echo '</tr>';
 
-    // Zeilen für jedes Attribut
+    // Zeilen für die einzelnen Merkmale generieren
     foreach ($attributes as $attribute) {
-        // Attribut überspringen, wenn es eines der unerwünschten ist
+        // Unwichtige Systemattribute/Bilder herausfiltern
         if (in_array($attribute, ['picture', 'filename_picture_perspective', 'product_name'])) {
             continue;
         }
 
-        // Hier wird der Attributname für 'de_DE' (z.B. "Breite") aus den Attributdetails geholt
-        $attributeDetails = getAttributeDetails(API_BASE_URL, $accessToken, $attribute, 'de_DE');
+        // Deutschen Anzeigenamen für das Attribut ermitteln
+        $attributeDetails = getMatrixAttributeDetails(API_BASE_URL, $accessToken, $attribute);
         $attributeName = isset($attributeDetails['labels']['de_DE']) ? $attributeDetails['labels']['de_DE'] : $attribute;
 
-        echo "<tr><td>$attributeName</td>";
+        echo "<tr><td style='font-weight: bold; padding: 10px; background-color: #fafafa;'>" . htmlspecialchars($attributeName) . "</td>";
 
-        // Werte für jedes Produkt unter dem Attribut
+        // Werte der einzelnen Maschinen vergleichen
         foreach ($skus as $sku) {
-            // Prüfen, ob der Wert vorhanden ist
-            $value = isset($products[$sku][$attribute]) ? $products[$sku][$attribute][0]['data'] : 'Nicht verfügbar';
+            $value = 'Nicht verfügbar';
+            $unit = '';
 
-            // Wenn das Attribut Optionen hat, den entsprechenden Namen anzeigen
-            if (isset($optionsMap[$attribute][$value])) {
-                // Zeige das Label anstelle des Codes
-                $value = $optionsMap[$attribute][$value];
-            }
-
-            // Formatieren, um ".0000" zu entfernen, falls das Attribut eine Zahl ist
-            $value = formatNumericValue($value);
-
-            // Wenn der Wert ein Array ist (z. B. für mehrere Auswahlmöglichkeiten), dann diese als Liste anzeigen
-            if (is_array($value)) {
-                $value = implode(', ', $value);
-            }
-
-            // Einheit hinzufügen, falls verfügbar
-            $unit = isset($products[$sku][$attribute][0]['unit']) ? $products[$sku][$attribute][0]['unit'] : '';
-
-            // Einheit umwandeln, falls nötig (z. B. "MILLIMETER" -> "mm")
-            if ($unit) {
-                $unit = strtolower($unit);
-                if ($unit === 'millimeter') {
-                    $unit = 'mm';
-                }
-            }
-
-            // Einheit und Wert ausgeben
-            echo "<td>" . htmlspecialchars($value . ($unit ? " ($unit)" : '')) . "</td>";
-        }
-        echo '</tr>';
-    }
-
-    echo '</table>';
-    ?>
-</body>
-</html>
+            if (isset($products[$sku][$attribute][0])) {
+                $rawData
