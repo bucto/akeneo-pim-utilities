@@ -169,7 +169,6 @@
                 $attributes[] = $attribute;
             }
             
-            // BEHOBEN: Robuster Check auf Dropdown/Auswahllisten ohne die fehlerhafte `type`-Referenz
             $rawVal = isset($data[0]['data']) ? $data[0]['data'] : null;
             if ($rawVal && is_string($rawVal) && !is_numeric($rawVal) && !isset($optionsMap[$attribute])) {
                 $options = getMatrixAttributeOptions(API_BASE_URL, $accessToken, $attribute);
@@ -203,6 +202,7 @@
         $attributeDetails = getMatrixAttributeDetails(API_BASE_URL, $accessToken, $attribute);
         $attributeName = isset($attributeDetails['labels']['de_DE']) ? $attributeDetails['labels']['de_DE'] : $attribute;
 
+        // HIER BEHOBEN: Einfache Anführungszeichen im HTML-String verwendet
         echo "<tr><td style='font-weight: bold; padding: 10px; background-color: #fafafa;'>" . htmlspecialchars($attributeName) . "</td>";
 
         // Werte der einzelnen Maschinen vergleichen
@@ -211,4 +211,42 @@
             $unit = '';
 
             if (isset($products[$sku][$attribute][0])) {
-                $rawData
+                $rawData = $products[$sku][$attribute][0]['data'];
+                
+                // Eventuelle Maßeinheiten auslesen (z.B. MILLIMETER)
+                if (isset($products[$sku][$attribute][0]['unit'])) {
+                    $unit = $products[$sku][$attribute][0]['unit'];
+                }
+
+                // Wert oder Array (für Mehrfachauswahl) lesbar aufbereiten
+                if (is_array($rawData)) {
+                    $mappedArray = [];
+                    foreach ($rawData as $subValue) {
+                        $mappedArray[] = isset($optionsMap[$attribute][$subValue]) ? $optionsMap[$attribute][$subValue] : $subValue;
+                    }
+                    $value = implode(', ', $mappedArray);
+                } else {
+                    $value = isset($optionsMap[$attribute][$rawData]) ? $optionsMap[$attribute][$rawData] : $rawData;
+                    $value = formatMatrixNumericValue($value);
+                }
+            }
+
+            // Einheiten-Klartext anhängen (z.B. "mm")
+            if ($unit) {
+                $unit = strtolower($unit);
+                if ($unit === 'millimeter') {
+                    $unit = 'mm';
+                }
+                $value .= " " . $unit;
+            }
+
+            // HIER BEHOBEN: Einfache Anführungszeichen im HTML-String verwendet
+            echo "<td style='padding: 10px;'>" . htmlspecialchars($value) . "</td>";
+        }
+        echo '</tr>';
+    }
+
+    echo '</table>';
+    ?>
+</body>
+</html>
