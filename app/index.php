@@ -1,92 +1,118 @@
+<?php
+include('api_helper.php');
+
+// Variablen für den Zustand
+$selectedFamily = isset($_GET['family']) ? $_GET['family'] : null;
+$filterStatus = isset($_GET['status']) ? $_GET['status'] : 'all'; // all, active, disabled
+
+// Schritt 1: Hol dir die Familien, wenn noch keine gewählt wurde
+$families = getAkeneoFamilies();
+
+// Schritt 2: Wenn eine Familie gewählt wurde, hol die Produkte
+$products = [];
+if ($selectedFamily) {
+    $products = getAkeneoProductsByFamily($selectedFamily);
+}
+?>
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PHP-Dateien auflisten</title>
+    <title>PIM Maschinen-Vergleich</title>
+    <link rel="stylesheet" href="css/styles.css">
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 0;
-            background-color: #f4f4f4;
-        }
-        .container {
-            width: 80%;
-            margin: 0 auto;
-            background-color: #fff;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-            padding: 20px;
-            margin-top: 50px;
-        }
-        h1 {
-            text-align: center;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 20px;
-        }
-        table, th, td {
-            border: 1px solid #ddd;
-        }
-        th, td {
-            padding: 10px;
-            text-align: left;
-        }
-        th {
-            background-color: #f4f4f4;
-        }
-        tr:nth-child(even) {
-            background-color: #f9f9f9;
-        }
-        a {
-            color: #3498db;
-            text-decoration: none;
-        }
-        a:hover {
-            text-decoration: underline;
-        }
+        .filter-box { margin: 15px 0; padding: 10px; background: #eee; border-radius: 5px; }
+        .filter-btn { padding: 5px 15px; margin-right: 5px; background: #fff; border: 1px solid #ccc; cursor: pointer; text-decoration: none; color: #333; border-radius: 3px; }
+        .filter-btn.active { background: #3498db; color: #fff; border-color: #3498db; }
+        .family-select { width: 100%; padding: 10px; font-size: 16px; margin-bottom: 20px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>Wähle eine Liste</h1>
+    <h1>AMADA Produkt-Vergleich</h1>
 
-    <?php
-    // Pfad zum Verzeichnis
-    $directory = __DIR__;
+    <label for="familyDropdown" style="font-weight: bold; display: block; margin-bottom: 5px;">Schritt 1: Welche PIM Familie willst Du vergleichen?</label>
+    <select id="familyDropdown" class="family-select" onchange="location = this.value;">
+        <option value="index.php">-- Bitte Produktfamilie wählen --</option>
+        <?php foreach ($families as $family): 
+            $label = isset($family['labels']['de_DE']) ? $family['labels']['de_DE'] : $family['code'];
+            $selected = ($selectedFamily === $family['code']) ? 'selected' : '';
+        ?>
+            <option value="index.php?family=<?php echo $family['code']; ?>" <?php echo $selected; ?>>
+                <?php echo htmlspecialchars($label . " (" . $family['code'] . ")"); ?>
+            </option>
+        <?php endforeach; ?>
+    </select>
 
-    // PHP-Dateien im Verzeichnis finden und config.php ignorieren
-    $files = array_filter(scandir($directory), function($file) {
-        return pathinfo($file, PATHINFO_EXTENSION) === 'php' 
-    && $file !== 'config.php' 
-    && $file !== basename(__FILE__) 
-    && $file !== 'Vergleich_Austattung.php' 
-    && $file !== 'OptionOK.php' 
-    && $file !== 'Vergleich_TechnischeDaten.php';
+    <?php if ($selectedFamily): ?>
+        <h2>Schritt 2: Produkte der Familie werden gelistet</h2>
+
+        <div class="filter-box">
+            <span>Status filtern:</span>
+            <a href="index.php?family=<?php echo $selectedFamily; ?>&status=all" class="filter-btn <?php echo $filterStatus === 'all' ? 'active' : ''; ?>">Alle anzeigen</a>
+            <a href="index.php?family=<?php echo $selectedFamily; ?>&status=active" class="filter-btn <?php echo $filterStatus === 'active' ? 'active' : ''; ?>">Nur Aktive</a>
+            <a href="index.php?family=<?php echo $selectedFamily; ?>&status=disabled" class="filter-btn <?php echo $filterStatus === 'disabled' ? 'active' : ''; ?>">Nur Deaktivierte</a>
+        </div>
+
+        <form id="skuForm" action="#" method="get">
+            <div class="checkbox-list">
+                <?php
+                $hasItems = false;
+
+                // 1. Aktive anzeigen (wenn 'all' oder 'active' gewählt)
+                if ($filterStatus === 'all' || $filterStatus === 'active') {
+                    foreach ($products['active'] as $product) {
+                        $hasItems = true;
+                        echo "<label>";
+                        echo "<input type='checkbox' class='sku-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> " . htmlspecialchars($product['identifier']);
+                        echo "</label>";
+                    }
+                }
+
+                // 2. Deaktivierte anzeigen (wenn 'all' oder 'disabled' gewählt)
+                if ($filterStatus === 'all' || $filterStatus === 'disabled') {
+                    foreach ($products['disabled'] as $product) {
+                        $hasItems = true;
+                        echo "<label class='disabled'>";
+                        echo "<input type='checkbox' class='sku-checkbox disabled-checkbox' name='skus[]' value='" . htmlspecialchars($product['identifier']) . "'> ";
+                        echo "<span class='disabled-text'>" . htmlspecialchars($product['identifier']) . " (Deaktiviert)</span>";
+                        echo "</label>";
+                    }
+                }
+
+                if (!$hasItems) {
+                    echo "<p>Keine Produkte mit diesem Status-Filter gefunden.</p>";
+                }
+                ?>
+            </div>
+            
+            <input type="submit" value="Vergleich der Ausstattung" name="action" formaction="Vergleich_Austattung.php">
+            <input type="submit" value="Vergleich der Technische Daten" name="action" formaction="Vergleich_TechnischeDaten.php">
+        </form>
+    <?php endif; ?>
+
+</div>
+
+<script>
+document.getElementById('skuForm').onsubmit = function(event) {
+    var selectedSKUs = [];
+    var checkboxes = document.querySelectorAll('.sku-checkbox:checked');
+    checkboxes.forEach(function(checkbox) {
+        selectedSKUs.push(checkbox.value);
     });
 
-    if (!empty($files)): ?>
-        <table>
-            <thead>
-                <tr>
-                    <th>Listen</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($files as $file): ?>
-                    <tr>
-                        <td><a href="<?php echo $file; ?>"><?php echo $file; ?></a></td>
-                    </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
-    <?php else: ?>
-        <p>Keine PHP-Dateien gefunden.</p>
-    <?php endif; ?>
-</div>
+    if (selectedSKUs.length > 0) {
+        var skuString = selectedSKUs.join(',');
+        var hiddenInput = document.createElement('input');
+        hiddenInput.type = 'hidden';
+        hiddenInput.name = 'skus';
+        hiddenInput.value = skuString;
+        document.getElementById('skuForm').appendChild(hiddenInput);
+    }
+}
+</script>
 
 </body>
 </html>

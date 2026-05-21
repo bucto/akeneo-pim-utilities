@@ -46,52 +46,65 @@ function getAccessToken() {
 }
 
 /**
- * Holt Produkte basierend auf Kategorien oder einer Produktfamilie
+ * Holt alle Produktfamilien aus Akeneo für Schritt 1
  */
-function getAkeneoProducts($type, $criteria) {
+function getAkeneoFamilies() {
+    $accessToken = getAccessToken();
+    $url = API_BASE_URL . "/families?limit=100";
+
+    $options = [
+        'http' => [
+            'header' => ["Authorization: Bearer $accessToken", "Content-Type: application/json"],
+            'method' => 'GET',
+            'ignore_errors' => true
+        ],
+        'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
+    ];
+
+    $context = stream_context_create($options);
+    $result = @file_get_contents($url, false, $context);
+    
+    if ($result === FALSE) {
+        die("Fehler beim Abrufen der Produktfamilien.");
+    }
+
+    $response = json_decode($result, true);
+    return isset($response['_embedded']['items']) ? $response['_embedded']['items'] : [];
+}
+
+/**
+ * Holt Produkte basierend auf einer Produktfamilie und trennt sie nach Status
+ */
+function getAkeneoProductsByFamily($familyCode) {
     $accessToken = getAccessToken();
     $allProducts = [];
     $page = 1;
     $limit = 100;
 
     while (true) {
-        // Unterscheidung: Suchen wir nach Kategorien (IN) oder nach einer Familie?
-        if ($type === 'family') {
-            $searchParams = ['family' => [['operator' => 'IN', 'value' => [$criteria]]]];
-        } else {
-            $searchParams = ['categories' => [['operator' => 'IN', 'value' => $criteria]]];
-        }
-
+        $searchParams = ['family' => [['operator' => 'IN', 'value' => [$familyCode]]]];
         $url = API_BASE_URL . "/products?search=" . urlencode(json_encode($searchParams)) . "&page=$page&limit=$limit";
 
         $options = [
             'http' => [
-                'header' => [
-                    "Authorization: Bearer $accessToken",
-                    "Content-Type: application/json"
-                ],
+                'header' => ["Authorization: Bearer $accessToken", "Content-Type: application/json"],
                 'method' => 'GET',
                 'ignore_errors' => true
             ],
-            'ssl' => [
-                'verify_peer' => false,
-                'verify_peer_name' => false,
-            ]
+            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
         ];
 
         $context = stream_context_create($options);
         $result = @file_get_contents($url, false, $context);
 
         if ($result === FALSE) {
-            die("Fehler beim Abrufen der Produkte von der API.");
+            die("Fehler beim Abrufen der Produkte.");
         }
 
         $response = json_decode($result, true);
 
         if ($response === null || isset($response['code'])) {
-            echo "<h3>API-Verbindungsfehler beim Produkt-Abruf</h3>";
-            echo "<strong>Antwort von Akeneo:</strong> <pre>" . htmlspecialchars($result) . "</pre>";
-            die();
+            break;
         }
 
         if (empty($response['_embedded']['items'])) {
@@ -107,7 +120,7 @@ function getAkeneoProducts($type, $criteria) {
         $page++;
     }
 
-    // Sortierung und Aufteilung in Aktiv / Deaktiviert
+    // Sortierung und Aufteilung
     $activeProducts = [];
     $disabledProducts = [];
 
