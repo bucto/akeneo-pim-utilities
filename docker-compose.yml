@@ -8,8 +8,6 @@ services:
     restart: always
     ports:
       - "${APP_PORT:-8085}:80"  # Nutzt weiterhin deinen Port 8098 aus Portainer
-    volumes:
-      - ./app:/var/www/html
     environment:
       - API_BASE_URL
       - TOKEN_URL
