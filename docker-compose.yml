@@ -12,15 +12,15 @@ services:
       - ./app:/var/www/html
     depends_on:
       - internal_db
-    # --- HIER KOMMEN DIE GEHEIMEN DATEN REIN ---
     environment:
       - DB_HOST=internal_db
-      - PIM_API_URL=${PIM_API_URL}
-      - PIM_CLIENT_ID=${PIM_CLIENT_ID}
-      - PIM_CLIENT_SECRET=${PIM_CLIENT_SECRET}
-      - PIM_USERNAME=${PIM_USERNAME}
-      - PIM_PASSWORD=${PIM_PASSWORD}
-      - DB_PASSWORD=${DB_PASSWORD:-user_passwort_hier} # Für PHP hinzugefügt, falls benötigt
+      - DB_PASSWORD
+      - API_BASE_URL
+      - TOKEN_URL
+      - API_USERNAME
+      - API_PASSWORD
+      - CLIENT_ID
+      - CLIENT_SECRET
 
   # --- 2. DIE INTERNE SQL DATENBANK ---
   internal_db:
