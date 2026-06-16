@@ -1,7 +1,7 @@
 <?php
 
 /** Logo-Pfad relativ zum Webroot */
-define('AMADA_LOGO_PATH', 'assets/AMADA_80th_logo_Black.svg');
+define('AMADA_LOGO_PATH', 'assets/amada-logo.svg');
 
 /** Admin-Bereich nur wenn ADMIN_ENABLED=true gesetzt ist */
 function isAdminEnabled(): bool {
