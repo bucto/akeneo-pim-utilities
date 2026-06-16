@@ -147,7 +147,7 @@ Vorlage: [`.env.example`](.env.example). **Niemals** die echte `.env` committen 
 
 | Variable | Beschreibung |
 |---|---|
-| `PIM_MEDIA_BASE_URL` | Basis-URL für Medien (z. B. `https://pim.amada.de`) |
+| `PIM_MEDIA_BASE_URL` | Basis-URL für Medien (z. B. `https://pim.example.de`) |
 | `PIM_MEDIA_CACHE` | Thumbnail-Profil (`thumbnail_small`, …) |
 | `PIM_IMAGE_ATTRS` | Kommagetrennte Bild-Attribut-Codes |
 
