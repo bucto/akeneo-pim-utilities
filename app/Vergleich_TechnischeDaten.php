@@ -114,11 +114,76 @@
         return apiGet("$baseUrl/attributes/$attributeCode/options?limit=100", $accessToken);
     }
 
-    function formatMatrixNumericValue($value) {
-        if (is_numeric($value)) {
-            return (floor($value) == $value) ? (int)$value : (float)$value;
-        }
-        return $value;
+    /** Zahl ohne überflüssige Nullen: "7480.0000" → "7480", "0.5000" → "0.5" */
+    function formatAmount(string $amount): string {
+        if (!is_numeric($amount)) return $amount;
+        $f = (float)$amount;
+        // Maximal 4 Nachkommastellen, überflüssige Nullen weg
+        return rtrim(rtrim(number_format($f, 4, '.', ''), '0'), '.');
+    }
+
+    /** Akeneo-Einheitencode → lesbare Abkürzung */
+    function unitAbbr(string $unit): string {
+        static $map = [
+            // Länge
+            'MILLIMETER'           => 'mm',
+            'CENTIMETER'           => 'cm',
+            'DECIMETER'            => 'dm',
+            'METER'                => 'm',
+            'KILOMETER'            => 'km',
+            'INCH'                 => 'in',
+            'FOOT'                 => 'ft',
+            // Gewicht
+            'GRAM'                 => 'g',
+            'KILOGRAM'             => 'kg',
+            'TON'                  => 't',
+            'POUND'                => 'lb',
+            // Leistung / Energie
+            'WATT'                 => 'W',
+            'KILOWATT'             => 'kW',
+            'MEGAWATT'             => 'MW',
+            'KILOVOLT_AMPERE'      => 'kVA',
+            'JOULE'                => 'J',
+            'KILOWATT_HOUR'        => 'kWh',
+            // Druck
+            'BAR'                  => 'bar',
+            'PASCAL'               => 'Pa',
+            'KILOPASCAL'           => 'kPa',
+            'PSI'                  => 'psi',
+            // Volumen / Durchfluss
+            'LITER'                => 'l',
+            'MILLILITER'           => 'ml',
+            'CUBIC_METER'          => 'm³',
+            'LITER_PER_MINUTE'     => 'l/min',
+            'CUBIC_METER_PER_HOUR' => 'm³/h',
+            // Geschwindigkeit
+            'METER_PER_SECOND'     => 'm/s',
+            'METER_PER_MINUTE'     => 'm/min',
+            'MILLIMETER_PER_MINUTE'=> 'mm/min',
+            'MILLIMETER_PER_SECOND'=> 'mm/s',
+            'KILOMETER_PER_HOUR'   => 'km/h',
+            // Frequenz
+            'HERTZ'                => 'Hz',
+            'KILOHERTZ'            => 'kHz',
+            'MEGAHERTZ'            => 'MHz',
+            // Temperatur
+            'CELSIUS'              => '°C',
+            'FAHRENHEIT'           => '°F',
+            'KELVIN'               => 'K',
+            // Spannung / Strom
+            'VOLT'                 => 'V',
+            'KILOVOLT'             => 'kV',
+            'AMPERE'               => 'A',
+            'MILLIAMPERE'          => 'mA',
+            // Winkel
+            'DEGREE'               => '°',
+            // Sonstiges
+            'DECIBEL'              => 'dB',
+            'PERCENT'              => '%',
+            'SQUARE_MILLIMETER'    => 'mm²',
+            'SQUARE_METER'         => 'm²',
+        ];
+        return $map[strtoupper($unit)] ?? strtolower($unit);
     }
 
     if (!isset($_GET['skus']) || empty($_GET['skus'])) {
@@ -190,32 +255,41 @@
 
         foreach ($skus as $sku) {
             $value = '-';
-            $unit  = '';
 
             if (isset($products[$sku][$attribute][0])) {
-                $rawData = $products[$sku][$attribute][0]['data'];
-                $unit    = $products[$sku][$attribute][0]['unit'] ?? '';
+                $entry   = $products[$sku][$attribute][0];
+                $rawData = $entry['data'];
 
-                if (is_array($rawData)) {
-                    $mappedArray = array_map(
-                        fn($v) => $optionsMap[$attribute][$v] ?? $v,
-                        $rawData
-                    );
-                    $value = implode(', ', $mappedArray);
+                // --- Maßattribut: {"amount": "7480.0000", "unit": "MILLIMETER"} ---
+                if (is_array($rawData) && array_key_exists('amount', $rawData) && array_key_exists('unit', $rawData)) {
+                    $amount = formatAmount((string)$rawData['amount']);
+                    $abbr   = unitAbbr($rawData['unit']);
+                    $value  = $amount . ' ' . $abbr;
+
+                // --- Multi-Select: array von Option-Codes ---
+                } elseif (is_array($rawData)) {
+                    $mapped = array_map(fn($v) => $optionsMap[$attribute][$v] ?? $v, $rawData);
+                    $value  = implode(', ', $mapped);
+
+                // --- Einfacher Wert (String, Zahl, Boolean) ---
                 } else {
-                    $value = $optionsMap[$attribute][$rawData] ?? $rawData;
-                    $value = formatMatrixNumericValue($value);
-                }
-            }
+                    // Option-Label nachschlagen
+                    $display = $optionsMap[$attribute][$rawData] ?? $rawData;
 
-            if ($unit) {
-                $unitMap = [
-                    'millimeter'       => 'mm',
-                    'kilogram'         => 'kg',
-                    'meter_per_minute' => 'm/min',
-                ];
-                $unit   = $unitMap[strtolower($unit)] ?? strtolower($unit);
-                $value .= ' ' . $unit;
+                    // Zahl formatieren
+                    if (is_numeric($display)) {
+                        $f       = (float)$display;
+                        $display = ($f == floor($f)) ? (int)$f : $f;
+                    }
+
+                    // Einheit aus separatem Feld (älteres Akeneo-Format)
+                    $legacyUnit = $entry['unit'] ?? '';
+                    if ($legacyUnit) {
+                        $display .= ' ' . unitAbbr($legacyUnit);
+                    }
+
+                    $value = $display;
+                }
             }
 
             echo '<td>' . htmlspecialchars((string)$value) . '</td>';
