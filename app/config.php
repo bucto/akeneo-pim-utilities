@@ -35,6 +35,6 @@ define('PIM_BENDING_SERIES_ATTRS', getenv('PIM_BENDING_SERIES_ATTRS') ?: 'series
 define('PIM_BENDING_LENGTH_ATTRS', getenv('PIM_BENDING_LENGTH_ATTRS') ?: 'bendingtool_tool_length,bendingtool_length,bendingtool_die_length');
 
 // Werkzeugfinder: kommagetrennte Familien-Codes (leer = DB/Fallback bendingtool_*)
-define('PIM_BENDING_FAMILIES', getenv('PIM_BENDING_FAMILIES') ?: 'bendingtool_die_4v');
+define('PIM_BENDING_FAMILIES', getenv('PIM_BENDING_FAMILIES') ?: '');
 define('PIM_BENDING_SIZE_ATTRS', getenv('PIM_BENDING_SIZE_ATTRS') ?: 'bendingtool_die_4v_size,bendingtool_die_1v_size');
 define('PIM_BENDING_ANGLE_ATTRS', getenv('PIM_BENDING_ANGLE_ATTRS') ?: 'bendingtool_die_4v_angle,bendingtool_die_1v_angle');

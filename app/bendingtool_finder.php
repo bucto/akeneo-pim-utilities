@@ -4,7 +4,7 @@ include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v6_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v7_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 $loadDebug   = [];
@@ -73,7 +73,7 @@ function loadBendingToolData(): array {
     );
 
     if (empty($bendingFamilies)) {
-        $loadDebug['message'] = 'Keine passenden Familien gefunden (PIM_BENDING_FAMILIES=' . PIM_BENDING_FAMILIES . ').';
+        $loadDebug['message'] = 'Keine passenden Familien gefunden (DB-Tab Abkantwerkzeuge, PIM_BENDING_FAMILIES oder Präfix bendingtool_).';
         return [];
     }
 
@@ -96,9 +96,14 @@ function loadBendingToolData(): array {
         $familyLabels[$f['code']] = $f['labels']['de_DE'] ?? $f['code'];
     }
 
-    // Nur Produktmodelle laden (keine Varianten-Produkte) — nur benoetigte Attribute
-    $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
+    // 1) Produktmodelle — zuerst ohne Attribut-Filter (robuster), dann mit Attributen
+    $allModels = getAkeneoProductModelsByFamilies($familyCodes, [], false);
     $loadDebug['api_error'] = getLastApiError();
+
+    if (empty($allModels)) {
+        $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
+        $loadDebug['api_error'] = getLastApiError();
+    }
 
     $loadDebug['product_models_total'] = count($allModels);
 
@@ -106,12 +111,46 @@ function loadBendingToolData(): array {
     $loadDebug['product_models_leaf'] = count($models);
     $loadDebug['source'] = 'product-models';
 
-    // Fallback: Root-Modelle, falls Blatt-Filter nichts liefert
+    // Blatt-Filter zu aggressiv → alle Modelle nutzen
+    if (empty($models) && !empty($allModels)) {
+        $models = $allModels;
+        $loadDebug['source'] = 'product-models-all';
+    }
+
+    // 2) Fallback: Root-Modelle
     if (empty($models)) {
         $models = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, true);
         $loadDebug['product_models_root'] = count($models);
         if (!empty($models)) {
             $loadDebug['source'] = 'product-models-root';
+        }
+    }
+
+    // 3) Fallback: Parent-Codes aus Produkten (nur wenn Modell-API leer — kein Massen-Index)
+    if (empty($models)) {
+        $products = getAkeneoProductsByFamilies($familyCodes, $onlyAttrs);
+        $loadDebug['products_total'] = count($products);
+
+        $parentCodes = [];
+        foreach ($products as $product) {
+            $parent = $product['parent'] ?? null;
+            if ($parent && !isset($parentCodes[$parent])) {
+                $parentCodes[$parent] = true;
+            }
+        }
+
+        $loadDebug['unique_parents'] = count($parentCodes);
+        $models = [];
+
+        foreach (array_keys($parentCodes) as $parentCode) {
+            $model = getAkeneoProductModel($parentCode, $onlyAttrs);
+            if ($model) {
+                $models[] = $model;
+            }
+        }
+
+        if (!empty($models)) {
+            $loadDebug['source'] = 'products-by-parent';
         }
     }
 
@@ -135,15 +174,22 @@ $cacheTime = null;
 if (!$forceReload && file_exists($cacheFile)) {
     $age = time() - filemtime($cacheFile);
     if ($age < $cacheTtlSec) {
-        $rows      = json_decode(file_get_contents($cacheFile), true) ?? [];
-        $cacheAge  = $age;
-        $cacheTime = filemtime($cacheFile);
+        $cached = json_decode(file_get_contents($cacheFile), true);
+        if (is_array($cached) && !empty($cached)) {
+            $rows      = $cached;
+            $cacheAge  = $age;
+            $cacheTime = filemtime($cacheFile);
+        }
     }
 }
 
 if (!isset($rows)) {
     $rows = loadBendingToolData();
-    file_put_contents($cacheFile, json_encode($rows));
+    if (!empty($rows)) {
+        file_put_contents($cacheFile, json_encode($rows));
+    } elseif (file_exists($cacheFile)) {
+        unlink($cacheFile);
+    }
     $cacheTime = time();
     $cacheAge  = 0;
 }
@@ -508,7 +554,9 @@ $colCount = 8;
     <br>
     Produktmodelle gesamt: <?php echo (int)($loadDebug['product_models_total'] ?? 0); ?>,
     Blatt-Modelle: <?php echo (int)($loadDebug['product_models_leaf'] ?? 0); ?>,
-    Root-Modelle: <?php echo (int)($loadDebug['product_models_root'] ?? 0); ?>
+    Root-Modelle: <?php echo (int)($loadDebug['product_models_root'] ?? 0); ?>,
+    Produkte: <?php echo (int)($loadDebug['products_total'] ?? 0); ?>,
+    Parent-Codes: <?php echo (int)($loadDebug['unique_parents'] ?? 0); ?>
     <?php if (!empty($loadDebug['source'])): ?>
         <br>Quelle: <code><?php echo htmlspecialchars($loadDebug['source']); ?></code>
     <?php endif; ?>

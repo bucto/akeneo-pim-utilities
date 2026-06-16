@@ -29,7 +29,7 @@ services:
       PIM_IMAGE_ATTRS:    ${PIM_IMAGE_ATTRS:-picture,filename_picture_perspective}
       PIM_LOCALE:         ${PIM_LOCALE:-de_DE}
       PIM_CHANNEL:        ${PIM_CHANNEL:-ecommerce}
-      PIM_BENDING_FAMILIES: ${PIM_BENDING_FAMILIES:-bendingtool_die_4v}
+      PIM_BENDING_FAMILIES: ${PIM_BENDING_FAMILIES:-}
       ADMIN_ENABLED:      ${ADMIN_ENABLED:-false}
       APP_AUTHOR:         ${APP_AUTHOR:-Thomas Bücken}
       APP_REPO:           ${APP_REPO:-https://github.com/bucto/akeneo-pim-utilities}
