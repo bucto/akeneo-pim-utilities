@@ -88,8 +88,32 @@ function extractProductImageUrl(array $product): ?string {
  */
 function getAkeneoFamilies(): array {
     $accessToken = getAccessToken();
-    $response    = apiGet(API_BASE_URL . "/families?limit=100", $accessToken);
-    return $response['_embedded']['items'] ?? [];
+    $allFamilies = [];
+    $page        = 1;
+    $limit       = 100;
+
+    while (true) {
+        $response = apiGet(API_BASE_URL . "/families?limit={$limit}&page={$page}", $accessToken);
+
+        if ($response === null || isset($response['code'])) break;
+
+        $items = $response['_embedded']['items'] ?? [];
+        if (empty($items)) break;
+
+        $allFamilies = array_merge($allFamilies, $items);
+
+        if (!isset($response['_links']['next']) || count($items) < $limit) break;
+
+        $page++;
+    }
+
+    usort($allFamilies, function($a, $b) {
+        $labelA = $a['labels']['de_DE'] ?? $a['code'];
+        $labelB = $b['labels']['de_DE'] ?? $b['code'];
+        return strcasecmp($labelA, $labelB);
+    });
+
+    return $allFamilies;
 }
 
 /**
