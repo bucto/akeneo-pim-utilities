@@ -8,7 +8,7 @@
     <?php renderBaseStyles(); ?>
     <style>
         .home-wrap {
-            max-width: 820px;
+            max-width: 1200px;
             margin: 0 auto;
         }
         .home-hero {

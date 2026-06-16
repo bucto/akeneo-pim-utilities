@@ -112,6 +112,7 @@
 
     <?php renderSiteHeader('vergleich'); ?>
 
+    <div class="page-content">
     <div class="page-head">
         <h1>Vergleich der Ausstattung &amp; Verbindungen</h1>
         <a href="produkt_vergleich.php" class="back-link">← Zurück</a>
@@ -264,5 +265,6 @@
         echo '<p>Für die ausgewählten Produkte wurden keine verknüpften Ausstattungen im PIM gefunden.</p>';
     }
     ?>
+    </div>
 </body>
 </html>

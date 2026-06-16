@@ -42,7 +42,7 @@ function renderBaseStyles(): void {
             padding: 24px 20px 40px;
         }
         .site-header {
-            max-width: 960px;
+            max-width: 1400px;
             margin: 0 auto 20px;
             display: flex;
             align-items: center;
@@ -89,6 +89,10 @@ function renderBaseStyles(): void {
             background: #fff;
         }
         .back-link:hover { background: var(--hover-bg); }
+        .page-content {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
     </style>
     <?php
 }

@@ -111,7 +111,7 @@ foreach ($rows as $r) {
             gap: 12px;
             flex-wrap: wrap;
             margin: 0 auto 16px;
-            max-width: 960px;
+            max-width: 1400px;
         }
         h1 {
             font-size: 22px;
@@ -137,7 +137,7 @@ foreach ($rows as $r) {
             border-radius: 8px;
             padding: 16px 20px;
             margin: 0 auto 18px;
-            max-width: 960px;
+            max-width: 1400px;
             display: flex;
             gap: 16px;
             flex-wrap: wrap;
@@ -197,7 +197,7 @@ foreach ($rows as $r) {
             border: 1px solid var(--border);
             box-shadow: 0 1px 3px rgba(0,0,0,0.06);
             overflow-x: auto;
-            max-width: 960px;
+            max-width: 1400px;
             margin: 0 auto;
         }
         table {
@@ -286,7 +286,7 @@ foreach ($rows as $r) {
             font-size: 13px;
             color: #718096;
             margin: 0 auto 18px;
-            max-width: 960px;
+            max-width: 1400px;
             line-height: 1.5;
         }
 

@@ -97,6 +97,7 @@
 
     <?php renderSiteHeader('vergleich'); ?>
 
+    <div class="page-content">
     <div class="page-head">
         <h1>Vergleich der Technischen Daten</h1>
         <a href="produkt_vergleich.php" class="back-link">← Zurück</a>
@@ -249,5 +250,6 @@
 
     echo '</table>';
     ?>
+    </div>
 </body>
 </html>

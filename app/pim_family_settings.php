@@ -73,7 +73,7 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
     <?php renderBaseStyles(); ?>
     <style>
         .container {
-            max-width: 1100px;
+            max-width: 1400px;
             background: #fff;
             margin: 0 auto;
             padding: 30px;

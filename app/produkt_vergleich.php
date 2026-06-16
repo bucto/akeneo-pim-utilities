@@ -70,7 +70,7 @@ $tabs = [
     <?php renderBaseStyles(); ?>
     <style>
         .container {
-            max-width: 820px;
+            max-width: 1400px;
             background: #fff;
             margin: 0 auto;
             border-radius: 8px;
