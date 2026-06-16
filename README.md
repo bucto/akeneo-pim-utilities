@@ -90,7 +90,7 @@ Browser → PHP/Apache (Container) → Akeneo PIM API
 - Docker & Docker Compose
 - Erreichbares **Akeneo PIM** mit REST-API-Zugang (OAuth-Client)
 - **MariaDB/MySQL** mit Tabelle `pim_family_config` (siehe unten)
-- Externes Docker-Netzwerk zur DB (Standard: `amada-db-network`)
+- Externes Docker-Netzwerk zur DB (Standard: `docker network name`)
 - Für Produktbilder: erreichbare **PIM-Medien-URL** (`PIM_MEDIA_BASE_URL`)
 
 ---
@@ -202,7 +202,7 @@ SQL in phpMyAdmin oder per CLI ausführen. Danach im Admin die Familien den Tabs
 1. **Stack anlegen** → Repository-URL: `https://github.com/bucto/akeneo-pim-utilities`
 2. **Compose-Pfad:** `docker-compose.yml`
 3. **Umgebungsvariablen** aus `.env.example` übernehmen und mit echten Werten füllen
-4. Externes Netzwerk `amada-db-network` (oder `DB_NETWORK`) muss existieren
+4. Externes Netzwerk `docker network name` (oder `DB_NETWORK`) muss existieren
 5. **Deploy the stack** — bei Updates: **Pull and redeploy** mit **Rebuild**
 
 > Nach Code-Änderungen reicht ein Container-Neustart oft nicht — Stack **neu bauen**, damit PHP-Dateien und die Revisionsnummer aktualisiert werden.
