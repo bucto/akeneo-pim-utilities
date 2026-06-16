@@ -64,10 +64,17 @@
         .badge {
             display: inline-block;
             background: #e2e8f0;
-            padding: 3px 8px;
+            padding: 4px 8px;
             margin: 2px 0;
             border-radius: 4px;
             font-size: 13px;
+            line-height: 1.3;
+        }
+        .badge-sku {
+            display: block;
+            font-size: 11px;
+            color: #718096;
+            margin-top: 1px;
         }
         .product-img {
             display: block;
@@ -110,8 +117,57 @@
     include 'config.php';
     include 'api_helper.php';
 
-    function getProductData($baseUrl, $accessToken, $sku) {
+    /** Vollständige Produktdaten eines SKU */
+    function getProductData($baseUrl, $accessToken, $sku): ?array {
         return apiGet("$baseUrl/products/" . urlencode($sku), $accessToken);
+    }
+
+    /**
+     * Holt deutsche Labels aller Assoziationstypen.
+     * Gibt [code => label] zurück.
+     */
+    function getAssociationTypeLabels(string $baseUrl, string $accessToken): array {
+        $labels = [];
+        $page   = 1;
+        while (true) {
+            $resp = apiGet("$baseUrl/association-types?limit=100&page=$page", $accessToken);
+            foreach ($resp['_embedded']['items'] ?? [] as $item) {
+                $labels[$item['code']] = $item['labels']['de_DE'] ?? $item['code'];
+            }
+            if (!isset($resp['_links']['next']) || count($resp['_embedded']['items'] ?? []) < 100) break;
+            $page++;
+        }
+        return $labels;
+    }
+
+    /**
+     * Holt deutsche Produktnamen für eine Liste von SKUs per Batch-Request.
+     * Gibt [identifier => name] zurück. Fallback: identifier selbst.
+     */
+    function getProductNames(string $baseUrl, string $accessToken, array $identifiers): array {
+        if (empty($identifiers)) return [];
+
+        $names   = [];
+        $chunks  = array_chunk(array_unique($identifiers), 100);
+
+        foreach ($chunks as $chunk) {
+            $search = json_encode(['identifier' => [['operator' => 'IN', 'value' => $chunk]]]);
+            $resp   = apiGet("$baseUrl/products?search=" . urlencode($search) . "&limit=100", $accessToken);
+
+            foreach ($resp['_embedded']['items'] ?? [] as $product) {
+                $ident = $product['identifier'];
+                $name  = null;
+
+                // product_name mit de_DE bevorzugen, dann ohne Locale
+                foreach ($product['values']['product_name'] ?? [] as $val) {
+                    if ($val['locale'] === 'de_DE') { $name = $val['data']; break; }
+                    if ($val['locale'] === null && $name === null) { $name = $val['data']; }
+                }
+                $names[$ident] = $name ?? $ident;
+            }
+        }
+
+        return $names;
     }
 
     if (!isset($_GET['skus']) || empty($_GET['skus'])) {
@@ -121,27 +177,41 @@
     $skus        = array_map('trim', explode(',', $_GET['skus']));
     $accessToken = getAccessToken();
 
-    $matrix       = [];
+    $matrix        = [];
     $allAssocTypes = [];
-    $imageUrls    = [];
+    $imageUrls     = [];
+    $allLinkedSkus = [];
 
+    // Hauptprodukte laden + Assoziationsmatrix aufbauen
     foreach ($skus as $sku) {
         $product = getProductData(API_BASE_URL, $accessToken, $sku);
         if (!$product) continue;
 
         $imageUrls[$sku] = extractProductImageUrl($product);
 
-        if (isset($product['associations'])) {
-            foreach ($product['associations'] as $type => $data) {
-                if (!in_array($type, $allAssocTypes)) {
-                    $allAssocTypes[] = $type;
-                }
-                if (!empty($data['products'])) {
-                    $matrix[$type][$sku] = $data['products'];
+        foreach ($product['associations'] ?? [] as $type => $data) {
+            if (!in_array($type, $allAssocTypes)) {
+                $allAssocTypes[] = $type;
+            }
+            if (!empty($data['products'])) {
+                $matrix[$type][$sku] = $data['products'];
+                foreach ($data['products'] as $linkedSku) {
+                    $allLinkedSkus[] = $linkedSku;
                 }
             }
         }
     }
+
+    // Assoziationstyp-Labels (de_DE) laden
+    $assocTypeLabels = getAssociationTypeLabels(API_BASE_URL, $accessToken);
+
+    // Assoziationstypen A-Z nach deutschem Label sortieren
+    usort($allAssocTypes, fn($a, $b) =>
+        strcasecmp($assocTypeLabels[$a] ?? $a, $assocTypeLabels[$b] ?? $b)
+    );
+
+    // Deutsche Produktnamen für alle verlinkten SKUs laden
+    $productNames = getProductNames(API_BASE_URL, $accessToken, $allLinkedSkus);
 
     if (!empty($allAssocTypes)) {
         echo '<table>';
@@ -164,12 +234,21 @@
         echo '</tr>';
 
         foreach ($allAssocTypes as $type) {
-            echo '<tr><td class="assoc-type">' . htmlspecialchars($type) . '</td>';
+            $typeLabel = $assocTypeLabels[$type] ?? $type;
+            echo '<tr><td class="assoc-type">' . htmlspecialchars($typeLabel) . '</td>';
+
             foreach ($skus as $sku) {
                 echo '<td>';
                 if (isset($matrix[$type][$sku])) {
-                    foreach ($matrix[$type][$sku] as $associatedSku) {
-                        echo '<span class="badge">' . htmlspecialchars($associatedSku) . '</span><br>';
+                    foreach ($matrix[$type][$sku] as $linkedSku) {
+                        $name = $productNames[$linkedSku] ?? $linkedSku;
+                        // Name und SKU anzeigen (SKU klein darunter wenn Name abweicht)
+                        echo '<span class="badge">';
+                        echo htmlspecialchars($name);
+                        if ($name !== $linkedSku) {
+                            echo '<span class="badge-sku">' . htmlspecialchars($linkedSku) . '</span>';
+                        }
+                        echo '</span><br>';
                     }
                 } else {
                     echo '<span style="color:#a0aec0;">– Keine –</span>';
