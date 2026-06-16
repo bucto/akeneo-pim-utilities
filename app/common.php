@@ -8,8 +8,66 @@ define('APP_AUTHOR', getenv('APP_AUTHOR') ?: 'Thomas Bücken');
 define('APP_REPO',   getenv('APP_REPO')   ?: 'https://github.com/bucto/akeneo-pim-utilities');
 
 /**
- * Git-Revisionsnummer: APP_REVISION → REVISION-Datei (Docker-Build) → git (lokale Entwicklung) → dev
+ * Git-Revisionsnummer:
+ * APP_REVISION → REVISION-Datei → GitHub-API (Portainer ohne .git) → lokales git → dev
  */
+function fetchGithubRevisionFromRepo(): ?string {
+    if (!preg_match('#github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$#i', APP_REPO, $matches)) {
+        return null;
+    }
+
+    $cacheFile = sys_get_temp_dir() . '/akeneo_pim_utilities_revision_cache.json';
+    if (is_readable($cacheFile)) {
+        $cached = json_decode((string)file_get_contents($cacheFile), true);
+        if (is_array($cached) && ($cached['expires'] ?? 0) > time() && !empty($cached['rev'])) {
+            return $cached['rev'];
+        }
+    }
+
+    $owner  = $matches[1];
+    $repo   = preg_replace('#\.git$#', '', $matches[2]);
+    $branch = getenv('APP_GIT_BRANCH') ?: 'main';
+    $url    = "https://api.github.com/repos/{$owner}/{$repo}/commits/" . rawurlencode($branch);
+
+    $headers = "User-Agent: akeneo-pim-utilities\r\nAccept: application/vnd.github+json\r\n";
+    $token   = getenv('GITHUB_TOKEN');
+    if (is_string($token) && $token !== '') {
+        $headers .= "Authorization: Bearer {$token}\r\n";
+    }
+
+    $tlsInsecure = defined('TLS_INSECURE')
+        ? TLS_INSECURE
+        : filter_var(getenv('PIM_TLS_INSECURE') ?: 'true', FILTER_VALIDATE_BOOLEAN);
+
+    $context = stream_context_create([
+        'http' => [
+            'method'  => 'GET',
+            'header'  => $headers,
+            'timeout' => 5,
+        ],
+        'ssl' => [
+            'verify_peer'      => !$tlsInsecure,
+            'verify_peer_name' => !$tlsInsecure,
+        ],
+    ]);
+
+    $response = @file_get_contents($url, false, $context);
+    if ($response === false) {
+        return null;
+    }
+
+    $data = json_decode($response, true);
+    $sha  = $data['sha'] ?? null;
+    if (!is_string($sha) || strlen($sha) < 7) {
+        return null;
+    }
+
+    $rev = substr($sha, 0, 7);
+    @file_put_contents($cacheFile, json_encode(['rev' => $rev, 'expires' => time() + 600]));
+
+    return $rev;
+}
+
 function getAppRevision(): string {
     static $revision = null;
     if ($revision !== null) {
@@ -24,9 +82,14 @@ function getAppRevision(): string {
     $revFile = __DIR__ . '/REVISION';
     if (is_readable($revFile)) {
         $fromFile = trim((string)file_get_contents($revFile));
-        if ($fromFile !== '') {
+        if ($fromFile !== '' && $fromFile !== 'dev') {
             return $revision = $fromFile;
         }
+    }
+
+    $fromGithub = fetchGithubRevisionFromRepo();
+    if ($fromGithub) {
+        return $revision = $fromGithub;
     }
 
     $repoRoot = dirname(__DIR__);

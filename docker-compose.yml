@@ -6,6 +6,8 @@ services:
       dockerfile: app/Dockerfile
       args:
         GIT_REVISION: ${GIT_REVISION:-dev}
+        GITHUB_SHA: ${GITHUB_SHA:-}
+        CI_COMMIT_SHORT_SHA: ${CI_COMMIT_SHORT_SHA:-}
     container_name: akeneo_pim_utilities
     restart: unless-stopped
     ports:
