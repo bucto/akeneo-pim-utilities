@@ -1,83 +1,105 @@
-# Akeneo PIM Utilities 🚀
+# AMADA PIM-Vergleichstool
 
-Ein internes Full-Stack-Toolpaket zur Optimierung, Validierung und zum Vergleich von Produktdaten aus dem Akeneo PIM. Die Anwendung basiert auf einem PHP-Frontend/Backend, einer MariaDB-Datenbank und wird vollständig über Docker orchestriert.
+## Was macht dieses Tool?
 
-## 📦 System-Architektur
+Dieses Tool hilft dabei, **Produkte aus dem AMADA Produktkatalog (PIM) schnell und übersichtlich miteinander zu vergleichen** — direkt im Browser, ohne Excel, ohne manuelle Recherche.
 
-Das Projekt ist in drei Microservices unterteilt, die über ein internes Docker-Netzwerk miteinander kommunizieren:
-1. **Web Frontend (`web_frontend`):** Die PHP-Applikation (Apache), die die Benutzeroberfläche bereitstellt und Logiken ausführt.
-2. **Datenbank (`internal_db`):** Eine MariaDB-Datenbank zur internen Speicherung von Dumps, Logs und Konfigurationen.
-3. **phpMyAdmin (`phpmyadmin`):** Ein visuelles Datenbank-Dashboard zur einfachen Verwaltung der SQL-Tabellen.
+Das PIM (Product Information Management System) ist die zentrale Datenbank, in der alle technischen Daten, Bilder und Eigenschaften der AMADA-Produkte gepflegt werden. Dieses Tool greift auf genau diese Daten zu und stellt sie so dar, dass man mehrere Produkte nebeneinander vergleichen kann.
 
 ---
 
-## 📂 Repository-Struktur
+## Was kann ich damit tun?
 
-```text
-akeneo-pim-utilities/
-│
-├── docker-compose.yml     # Hauptkonfiguration für Docker / Portainer Stacks
-├── README.md              # Projektdokumentation
-│
-└── app/                   # Das PHP-Anwendungsverzeichnis (Frontend & Logik)
-    ├── Dockerfile         # Bauanleitung für das PHP-Apache-Image
-    ├── config.php         # Dynamische Konfigurationsdatei (liest Umgebungsvariablen)
-    ├── index.php          # Startseite der Anwendung
-    └── ...                # Weitere PHP- & CSS-Dateien (z.B. Vergleicher, Masken)
-	
-	Variable,Beschreibung,Beispielwert / Fallback
-PIM_API_URL,Die vollständige URL zu eurer Akeneo-Instanz,https://ihr-pim-system.com
-PIM_CLIENT_ID,Akeneo API Client-ID (aus den PIM-Einstellungen),3_xxxxxx...
-PIM_CLIENT_SECRET,Akeneo API Client-Secret,secret_xxxxxx...
-PIM_USERNAME,API-Benutzername im Akeneo,api_integration_user
-PIM_PASSWORD,API-Passwort des Akeneo-Benutzers,super-safe-pim-password
+### 1. Produkte nach Bereichen auswählen
 
+Auf der Startseite gibt es fünf Reiter (Tabs):
 
-Variable,Beschreibung,Beispielwert / Fallback
-PIM_API_URL,Die vollständige URL zu eurer Akeneo-Instanz,https://ihr-pim-system.com
-PIM_CLIENT_ID,Akeneo API Client-ID (aus den PIM-Einstellungen),3_xxxxxx...
-PIM_CLIENT_SECRET,Akeneo API Client-Secret,secret_xxxxxx...
-PIM_USERNAME,API-Benutzername im Akeneo,api_integration_user
-PIM_PASSWORD,API-Passwort des Akeneo-Benutzers,super-safe-pim-password
+| Tab | Enthält |
+|---|---|
+| **Maschinen** | Laser-, Stanz- und Abkantmaschinen |
+| **Automation** | Automatisierungslösungen und Beladesysteme |
+| **Zubehör** | Optionales Zubehör für Maschinen |
+| **Stanzwerkzeuge** | Werkzeuge für Stanzmaschinen |
+| **Abkantwerkzeuge** | Werkzeuge für Abkantpressen |
 
+In jedem Reiter wählt man zunächst eine **Produktfamilie** (z.B. „Laserschneidmaschinen") aus einem Dropdown-Menü. Danach erscheint die Liste aller Produkte dieser Familie — mit Produktbild, Artikelnummer und Status (aktiv/deaktiviert).
 
+### 2. Produkte vergleichen
 
-🚀 Inbetriebnahme / Deployment
-Methode A: Lokale Entwicklung (PC)
-Klone das Repository auf deinen Computer.
+Man wählt beliebig viele Produkte per Checkbox aus und startet dann den Vergleich:
 
-Erstelle im Hauptverzeichnis eine Datei namens .env (wird von Git ignoriert) und fülle sie mit den echten Zugangsdaten:
+- **Technische Daten vergleichen** — Zeigt alle technischen Eigenschaften (Abmessungen, Gewicht, Leistung, …) nebeneinander in einer Tabelle. Zahlenwerte werden mit der richtigen Einheit angezeigt (z.B. `6500 mm`, `80 kg`, `7 kW`). Option-Werte werden auf Deutsch übersetzt.
 
-Code-Snippet
-PIM_API_URL=[https://mein-pim.de](https://mein-pim.de)
-PIM_CLIENT_ID=deine_id
-PIM_CLIENT_SECRET=dein_secret
-PIM_USERNAME=admin
-PIM_PASSWORD=geheim
-DB_ROOT_PASSWORD=db_root_safe
-DB_PASSWORD=db_user_safe
-Starte das Projekt über das Terminal im Hauptverzeichnis:
+- **Ausstattung vergleichen** — Zeigt welche Zusatzgeräte und Komponenten jedem Produkt zugeordnet sind.
 
-Bash
-docker compose up --build -d
-Die Services sind nun wie folgt erreichbar:
+Beide Vergleichsansichten zeigen das Produktbild jedes Artikels im Tabellenkopf, sodass man sofort weiß, über welches Gerät man spricht.
 
-PHP-Anwendung: http://localhost:8085
+### 3. Familien-Zuweisung verwalten
 
-phpMyAdmin: http://localhost:8086
+Über den Link **„PIM-Familien konfigurieren"** auf der Startseite gelangt man zur Verwaltungsseite. Dort kann man per Checkbox festlegen, in welchem Tab jede Produktfamilie erscheinen soll. Familien die gar nicht relevant sind, können auf „Nicht laden" gesetzt werden — das macht die Seite schneller.
 
-Methode B: Server-Deployment via Portainer (Empfohlen)
-Erstelle in Portainer einen neuen Stack.
+---
 
-Wähle Repository als Build-Methode und gib die URL dieses GitHub-Repos an.
+## Welche Vorteile bringt das Tool?
 
-Aktiviere Automatic Updates, damit sich der Container bei jedem Git-Push automatisch aktualisiert.
+**Ohne dieses Tool:**
+- Man muss im PIM-System mehrere Produktseiten einzeln öffnen und Daten manuell in eine Excel-Tabelle übertragen.
+- Das kostet Zeit, ist fehleranfällig und die Daten veralten schnell.
+- Nicht jeder hat Zugang zum PIM-System oder kennt sich damit aus.
 
-Scroll nach unten zu Environment variables und füge alle oben aufgelisteten Variablen mit den echten Produktionsdaten hinzu.
+**Mit diesem Tool:**
+- Ein Vergleich von 5 Produkten dauert **weniger als eine Minute**.
+- Die Daten kommen immer **direkt aus dem PIM** — also immer aktuell, nie veraltet.
+- Die Anzeige ist übersichtlich aufbereitet: deutsche Bezeichnungen, lesbare Einheiten, Produktbilder.
+- **Jeder im Unternehmen** kann es nutzen — kein PIM-Wissen nötig.
+- Besonders nützlich für: Vertrieb, Produktmanagement, Messeplanung, technische Dokumentation.
 
-Klicke auf Deploy the stack. Portainer baut das PHP-Image im Hintergrund eigenständig auf.
+---
 
-🛠️ Wichtige Entwicklungshinweise
-Datenbank-Host: Innerhalb des PHP-Codes darf für die DB-Verbindung nicht localhost genutzt werden. Der Hostname lautet immer internal_db (entspricht dem Docker-Servicenamen).
+## Technischer Überblick (für Admins)
 
-Daten-Persistenz: Die SQL-Daten werden in einem Docker-Volume (db_data) gespeichert. Das bedeutet, deine importierten Daten bleiben auch dann erhalten, wenn die Container gestoppt oder aktualisiert werden.
+| Komponente | Technologie |
+|---|---|
+| Weboberfläche | PHP 8.2 + Apache (Docker) |
+| Datenbank | Zentrale MariaDB über `amada-db-network` |
+| PIM-Anbindung | Akeneo REST API (OAuth2) |
+| Deployment | Docker / Portainer Stack |
+
+### Umgebungsvariablen (`.env`)
+
+```
+APP_PORT=8085
+
+# Zentrale MariaDB
+DB_HOST=amada-db-mariadb11
+DB_PORT=3306
+DB_NETWORK=amada-db-network
+DB_NAME=
+DB_USER=
+DB_PASSWORD=
+
+# Akeneo PIM API
+PIM_API_BASE_URL=https://192.168.5.4/api/rest/v1
+PIM_API_USERNAME=
+PIM_API_PASSWORD=
+PIM_CLIENT_ID=
+PIM_CLIENT_SECRET=
+PIM_TLS_INSECURE=true
+
+# Produktbilder
+PIM_MEDIA_BASE_URL=https://pim.amada.de
+PIM_MEDIA_CACHE=thumbnail_small
+PIM_IMAGE_ATTRS=picture,filename_picture_perspective
+```
+
+### Deployment via Portainer
+
+1. Neuen Stack anlegen → Repository-URL eintragen
+2. Automatic Updates aktivieren (aktualisiert sich bei jedem Git-Push automatisch)
+3. Umgebungsvariablen mit echten Werten befüllen
+4. „Deploy the stack" klicken
+
+### Datenbank-Migration
+
+Beim ersten Start muss die Tabelle `pim_family_config` einmalig angelegt werden.
+Das SQL dazu liegt in `database/init/01_pim_family_config.sql` und kann direkt in phpMyAdmin ausgeführt werden.
