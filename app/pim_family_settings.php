@@ -85,7 +85,7 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
             padding: 30px 20px;
         }
         .container {
-            max-width: 960px;
+            max-width: 1100px;
             background: #fff;
             margin: 0 auto;
             padding: 30px;
@@ -176,35 +176,70 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
         }
 
         .table-wrap {
-            overflow-x: auto;
             border: 1px solid var(--border);
             border-radius: 6px;
             margin-bottom: 20px;
+            overflow: visible; /* kein horizontales Scrollen mehr nötig */
         }
         table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 600px;
+            table-layout: fixed;
         }
+        /* Spaltenbreiten */
+        col.col-label  { width: auto; min-width: 180px; }
+        col.col-code   { width: 160px; }
+        col.col-check  { width: 56px; }
+
         thead th {
             background: var(--dark-gray);
             color: #fff;
-            padding: 10px 14px;
-            text-align: left;
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 600;
-            white-space: nowrap;
+            vertical-align: bottom;
+            padding: 6px 4px 8px;
+            text-align: center;
+            border-right: 1px solid #4a5568;
         }
-        thead th.center { text-align: center; }
+        /* Erste zwei Spalten: normaler horizontaler Text */
+        thead th:first-child,
+        thead th:nth-child(2) {
+            text-align: left;
+            padding: 10px 14px;
+            vertical-align: middle;
+        }
+        /* Checkbox-Spaltenköpfe: Text senkrecht von unten nach oben */
+        thead th.col-rotated {
+            white-space: nowrap;
+            width: 56px;
+            padding: 10px 4px 6px;
+        }
+        thead th.col-rotated span {
+            display: inline-block;
+            writing-mode: vertical-lr;
+            transform: rotate(180deg);
+            font-size: 12px;
+            line-height: 1;
+            max-height: 130px;
+        }
+        /* "Nicht laden" in Warnfarbe */
+        thead th.col-excluded {
+            background: #742a2a;
+        }
+
         tbody tr:hover { background: var(--row-hover); }
         tbody tr.excluded-row { background: var(--excluded-bg) !important; }
         td {
-            padding: 9px 14px;
+            padding: 8px 14px;
             border-bottom: 1px solid #edf2f7;
             font-size: 14px;
             vertical-align: middle;
         }
-        td.center { text-align: center; }
+        td.center {
+            text-align: center;
+            padding: 8px 4px;
+            border-right: 1px solid #edf2f7;
+        }
         td code {
             font-size: 12px;
             background: #edf2f7;
@@ -264,16 +299,26 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
     <form method="post" action="pim_family_settings.php">
         <div class="table-wrap">
             <table id="familyTable">
+                <colgroup>
+                    <col class="col-label">
+                    <col class="col-code">
+                    <col class="col-check">
+                    <col class="col-check">
+                    <col class="col-check">
+                    <col class="col-check">
+                    <col class="col-check">
+                    <col class="col-check">
+                </colgroup>
                 <thead>
                     <tr>
                         <th>Familie (de_DE)</th>
                         <th>Code</th>
-                        <th class="center">Maschinen</th>
-                        <th class="center">Automation</th>
-                        <th class="center">Zubehör</th>
-                        <th class="center">Stanzwerkzeuge</th>
-                        <th class="center">Abkantwerkzeuge</th>
-                        <th class="center">Nicht laden</th>
+                        <th class="col-rotated"><span>Maschinen</span></th>
+                        <th class="col-rotated"><span>Automation</span></th>
+                        <th class="col-rotated"><span>Zubehör</span></th>
+                        <th class="col-rotated"><span>Stanzwerkzeuge</span></th>
+                        <th class="col-rotated"><span>Abkantwerkzeuge</span></th>
+                        <th class="col-rotated col-excluded"><span>Nicht laden</span></th>
                     </tr>
                 </thead>
                 <tbody>
