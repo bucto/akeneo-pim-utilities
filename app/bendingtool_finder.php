@@ -4,16 +4,29 @@ include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v5_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v6_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 $loadDebug   = [];
 
 /**
- * Familien für den Werkzeugfinder: DB-Tab „Abkantwerkzeuge“ oder Fallback bendingtool_*
+ * Familien für den Werkzeugfinder.
+ * Priorität: PIM_BENDING_FAMILIES → DB-Tab „Abkantwerkzeuge“ → Fallback bendingtool_*
  */
 function getBendingToolFamilies(): array {
     $allFamilies = getAkeneoFamilies();
+
+    $explicitCodes = array_values(array_filter(array_map(
+        'trim',
+        explode(',', PIM_BENDING_FAMILIES)
+    )));
+
+    if (!empty($explicitCodes)) {
+        return array_values(array_filter(
+            $allFamilies,
+            fn($f) => in_array($f['code'], $explicitCodes, true)
+        ));
+    }
 
     if (hasAnyFamilyConfig()) {
         $configured = getConfiguredFamiliesForContext('bending_tools') ?? [];
@@ -42,8 +55,8 @@ function modelToRow(array $model, array $familyLabels): array {
         'familyCode'  => $fc,
         'familyLabel' => $familyLabels[$fc] ?? $fc,
         'imageUrl'    => $model['_imageUrl'] ?? null,
-        'size'        => extractAttrValue($model, 'bendingtool_die_1v_size'),
-        'angle'       => extractAttrValue($model, 'bendingtool_die_1v_angle'),
+        'size'        => extractAttrValueFirst($model, PIM_BENDING_SIZE_ATTRS),
+        'angle'       => extractAttrValueFirst($model, PIM_BENDING_ANGLE_ATTRS),
         'height'      => extractAttrValueFirst($model, PIM_BENDING_HEIGHT_ATTRS),
         'radius'      => extractAttrValueFirst($model, PIM_BENDING_RADIUS_ATTRS),
         'series'      => extractAttrValueFirst($model, PIM_BENDING_SERIES_ATTRS),
@@ -60,16 +73,16 @@ function loadBendingToolData(): array {
     );
 
     if (empty($bendingFamilies)) {
-        $loadDebug['message'] = 'Keine passenden Familien gefunden (DB-Tab Abkantwerkzeuge oder Präfix bendingtool_).';
+        $loadDebug['message'] = 'Keine passenden Familien gefunden (PIM_BENDING_FAMILIES=' . PIM_BENDING_FAMILIES . ').';
         return [];
     }
 
     $imageAttrs  = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
-    $filterAttrs = [
-        'bendingtool_die_1v_size',
-        'bendingtool_die_1v_angle',
-        'product_name',
-    ];
+    $filterAttrs = array_values(array_unique(array_merge(
+        array_map('trim', explode(',', PIM_BENDING_SIZE_ATTRS)),
+        array_map('trim', explode(',', PIM_BENDING_ANGLE_ATTRS)),
+        ['product_name']
+    )));
     $extraAttrs = array_merge(
         array_map('trim', explode(',', PIM_BENDING_HEIGHT_ATTRS)),
         array_map('trim', explode(',', PIM_BENDING_RADIUS_ATTRS)),
