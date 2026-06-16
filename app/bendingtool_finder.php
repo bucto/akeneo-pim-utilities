@@ -4,7 +4,7 @@ include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v4_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v5_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 $loadDebug   = [];
@@ -32,48 +32,7 @@ function getBendingToolFamilies(): array {
     ));
 }
 
-function modelStatusFromVariants(array $variants): array {
-    if (empty($variants)) {
-        return ['display' => '–', 'raw' => ''];
-    }
-
-    $active = 0;
-    foreach ($variants as $variant) {
-        if (($variant['enabled'] ?? true) !== false) {
-            $active++;
-        }
-    }
-
-    $total = count($variants);
-    if ($active === $total) {
-        return ['display' => 'Aktiv', 'raw' => 'active'];
-    }
-    if ($active === 0) {
-        return ['display' => 'Inaktiv', 'raw' => 'disabled'];
-    }
-
-    return [
-        'display' => $active . '/' . $total . ' aktiv',
-        'raw'     => 'partial',
-    ];
-}
-
-function buildVariantIndex(array $familyCodes): array {
-    $products = getAkeneoProductsByFamilies($familyCodes, []);
-    $index    = [];
-
-    foreach ($products as $product) {
-        $parent = $product['parent'] ?? null;
-        if (!$parent) {
-            continue;
-        }
-        $index[$parent][] = $product;
-    }
-
-    return $index;
-}
-
-function modelToRow(array $model, array $familyLabels, array $variants = []): array {
+function modelToRow(array $model, array $familyLabels): array {
     $fc   = $model['family'] ?? '';
     $code = $model['code'] ?? '';
 
@@ -88,8 +47,6 @@ function modelToRow(array $model, array $familyLabels, array $variants = []): ar
         'height'      => extractAttrValueFirst($model, PIM_BENDING_HEIGHT_ATTRS),
         'radius'      => extractAttrValueFirst($model, PIM_BENDING_RADIUS_ATTRS),
         'series'      => extractAttrValueFirst($model, PIM_BENDING_SERIES_ATTRS),
-        'status'      => modelStatusFromVariants($variants),
-        'variantCount'=> count($variants),
     ];
 }
 
@@ -126,14 +83,9 @@ function loadBendingToolData(): array {
         $familyLabels[$f['code']] = $f['labels']['de_DE'] ?? $f['code'];
     }
 
-    // 1) Produktmodelle laden — zuerst ohne Attribut-Filter (robuster), dann mit Attributen
-    $allModels = getAkeneoProductModelsByFamilies($familyCodes, [], false);
+    // Nur Produktmodelle laden (keine Varianten-Produkte) — nur benoetigte Attribute
+    $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
     $loadDebug['api_error'] = getLastApiError();
-
-    if (empty($allModels)) {
-        $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
-        $loadDebug['api_error'] = getLastApiError();
-    }
 
     $loadDebug['product_models_total'] = count($allModels);
 
@@ -141,40 +93,12 @@ function loadBendingToolData(): array {
     $loadDebug['product_models_leaf'] = count($models);
     $loadDebug['source'] = 'product-models';
 
-    // 2) Fallback: Root-Modelle, falls Blatt-Filter nichts liefert
+    // Fallback: Root-Modelle, falls Blatt-Filter nichts liefert
     if (empty($models)) {
         $models = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, true);
         $loadDebug['product_models_root'] = count($models);
         if (!empty($models)) {
             $loadDebug['source'] = 'product-models-root';
-        }
-    }
-
-    // 3) Fallback: Parent-Codes aus Varianten-Produkten → Modell laden
-    if (empty($models)) {
-        $products = getAkeneoProductsByFamilies($familyCodes, $onlyAttrs);
-        $loadDebug['products_total'] = count($products);
-
-        $parentCodes = [];
-        foreach ($products as $product) {
-            $parent = $product['parent'] ?? null;
-            if ($parent && !isset($parentCodes[$parent])) {
-                $parentCodes[$parent] = true;
-            }
-        }
-
-        $loadDebug['unique_parents'] = count($parentCodes);
-        $models = [];
-
-        foreach (array_keys($parentCodes) as $parentCode) {
-            $model = getAkeneoProductModel($parentCode, $onlyAttrs);
-            if ($model) {
-                $models[] = $model;
-            }
-        }
-
-        if (!empty($models)) {
-            $loadDebug['source'] = 'products-by-parent';
         }
     }
 
@@ -186,13 +110,7 @@ function loadBendingToolData(): array {
         return [];
     }
 
-    $variantIndex = buildVariantIndex($familyCodes);
-    $loadDebug['variants_total'] = array_sum(array_map('count', $variantIndex));
-
-    $rows = array_map(
-        fn($m) => modelToRow($m, $familyLabels, $variantIndex[$m['code'] ?? ''] ?? []),
-        $models
-    );
+    $rows = array_map(fn($m) => modelToRow($m, $familyLabels), $models);
     usort($rows, fn($a, $b) => strcasecmp($a['name'], $b['name']));
 
     return $rows;
@@ -252,23 +170,20 @@ $angleFilter  = collectUniqueFilterValues($rows, 'angle', true);
 $heightFilter = collectUniqueFilterValues($rows, 'height', true);
 $radiusFilter = collectUniqueFilterValues($rows, 'radius', true);
 $seriesFilter = collectUniqueFilterValues($rows, 'series', false);
-$statusFilter = collectUniqueFilterValues($rows, 'status', false);
 
 $uniqueSizes   = $sizeFilter['values'];
 $uniqueAngles  = $angleFilter['values'];
 $uniqueHeights = $heightFilter['values'];
 $uniqueRadii   = $radiusFilter['values'];
 $uniqueSeries  = $seriesFilter['values'];
-$uniqueStatus  = $statusFilter['values'];
 
 $sizeLabels   = $sizeFilter['labels'];
 $angleLabels  = $angleFilter['labels'];
 $heightLabels = $heightFilter['labels'];
 $radiusLabels = $radiusFilter['labels'];
 $seriesLabels = $seriesFilter['labels'];
-$statusLabels = $statusFilter['labels'];
 
-$colCount = 9;
+$colCount = 8;
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -564,7 +479,7 @@ $colCount = 9;
 
 <p class="page-hint">
     Es werden <strong>Produktmodelle</strong> angezeigt — klicken Sie auf ein Modell, um alle zugehörigen Artikel
-    mit den jeweiligen Werkzeuglängen anzuzeigen. Filtern Sie nach V-Öffnung, Winkel, Werkzeughöhe, Radius, Status und Serie.
+    mit den jeweiligen Werkzeuglängen anzuzeigen. Filtern Sie nach V-Öffnung, Winkel, Werkzeughöhe, Radius und Serie.
 </p>
 
 <?php if (empty($rows) && isAdminEnabled() && !empty($loadDebug)): ?>
@@ -580,10 +495,7 @@ $colCount = 9;
     <br>
     Produktmodelle gesamt: <?php echo (int)($loadDebug['product_models_total'] ?? 0); ?>,
     Blatt-Modelle: <?php echo (int)($loadDebug['product_models_leaf'] ?? 0); ?>,
-    Root-Modelle: <?php echo (int)($loadDebug['product_models_root'] ?? 0); ?>,
-    Produkte: <?php echo (int)($loadDebug['products_total'] ?? 0); ?>,
-    Parent-Codes: <?php echo (int)($loadDebug['unique_parents'] ?? 0); ?>,
-    Varianten: <?php echo (int)($loadDebug['variants_total'] ?? 0); ?>
+    Root-Modelle: <?php echo (int)($loadDebug['product_models_root'] ?? 0); ?>
     <?php if (!empty($loadDebug['source'])): ?>
         <br>Quelle: <code><?php echo htmlspecialchars($loadDebug['source']); ?></code>
     <?php endif; ?>
@@ -645,17 +557,6 @@ $colCount = 9;
         </select>
     </div>
     <div class="filter-group">
-        <label>Status</label>
-        <select id="filterStatus" onchange="applyFilters()">
-            <option value="">Alle</option>
-            <?php foreach ($uniqueStatus as $val): ?>
-                <option value="<?php echo htmlspecialchars((string)$val); ?>">
-                    <?php echo htmlspecialchars($statusLabels[$val] ?? (string)$val); ?>
-                </option>
-            <?php endforeach; ?>
-        </select>
-    </div>
-    <div class="filter-group">
         <label>Serie</label>
         <select id="filterSeries" onchange="applyFilters()">
             <option value="">Alle</option>
@@ -682,8 +583,7 @@ $colCount = 9;
                 <th onclick="sortTable(4)" data-col="4">Winkel <span class="sort-icon"></span></th>
                 <th onclick="sortTable(5)" data-col="5">Werkzeughöhe <span class="sort-icon"></span></th>
                 <th onclick="sortTable(6)" data-col="6">Radius <span class="sort-icon"></span></th>
-                <th onclick="sortTable(7)" data-col="7">Status <span class="sort-icon"></span></th>
-                <th onclick="sortTable(8)" data-col="8">Serie <span class="sort-icon"></span></th>
+                <th onclick="sortTable(7)" data-col="7">Serie <span class="sort-icon"></span></th>
             </tr>
         </thead>
         <tbody>
@@ -705,7 +605,6 @@ $colCount = 9;
                 data-angle="<?php echo htmlspecialchars((string)($row['angle']['raw'] ?? '')); ?>"
                 data-height="<?php echo htmlspecialchars((string)($row['height']['raw'] ?? '')); ?>"
                 data-radius="<?php echo htmlspecialchars((string)($row['radius']['raw'] ?? '')); ?>"
-                data-status="<?php echo htmlspecialchars((string)($row['status']['raw'] ?? '')); ?>"
                 data-series="<?php echo htmlspecialchars((string)($row['series']['raw'] ?? '')); ?>">
                 <td>
                     <?php if ($row['imageUrl']): ?>
@@ -722,29 +621,13 @@ $colCount = 9;
                 <td>
                     <span class="model-name"><?php echo htmlspecialchars($row['name']); ?></span>
                     <span class="model-code"><?php echo htmlspecialchars($row['code']); ?></span>
-                    <span class="expand-hint">
-                        <?php if ($row['variantCount'] > 0): ?>
-                            ▶ <?php echo (int)$row['variantCount']; ?> Artikel anzeigen
-                        <?php else: ?>
-                            ▶ Artikel laden
-                        <?php endif; ?>
-                    </span>
+                    <span class="expand-hint">▶ Artikel / Längen anzeigen</span>
                 </td>
                 <td><span class="family-badge"><?php echo htmlspecialchars($row['familyLabel']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['size']['display']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['angle']['display']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['height']['display']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['radius']['display']); ?></span></td>
-                <td>
-                    <?php
-                    $statusClass = match ($row['status']['raw']) {
-                        'active'   => 'status-active',
-                        'disabled' => 'status-disabled',
-                        default    => '',
-                    };
-                    ?>
-                    <span class="<?php echo $statusClass; ?>"><?php echo htmlspecialchars($row['status']['display']); ?></span>
-                </td>
                 <td><?php echo htmlspecialchars($row['series']['display']); ?></td>
             </tr>
             <?php endforeach; ?>
@@ -764,7 +647,6 @@ function applyFilters() {
     const angle  = document.getElementById('filterAngle').value;
     const height = document.getElementById('filterHeight').value;
     const radius = document.getElementById('filterRadius').value;
-    const status = document.getElementById('filterStatus').value;
     const series = document.getElementById('filterSeries').value;
 
     closeAllVariants();
@@ -778,10 +660,9 @@ function applyFilters() {
         const matchAngle  = !angle  || row.dataset.angle  === angle;
         const matchHeight = !height || row.dataset.height === height;
         const matchRadius = !radius || row.dataset.radius === radius;
-        const matchStatus = !status || row.dataset.status === status;
         const matchSeries = !series || row.dataset.series === series;
 
-        if (matchSearch && matchSize && matchAngle && matchHeight && matchRadius && matchStatus && matchSeries) {
+        if (matchSearch && matchSize && matchAngle && matchHeight && matchRadius && matchSeries) {
             row.classList.remove('hidden');
             visible++;
         } else {
@@ -800,7 +681,6 @@ function resetFilters() {
     document.getElementById('filterAngle').value   = '';
     document.getElementById('filterHeight').value  = '';
     document.getElementById('filterRadius').value  = '';
-    document.getElementById('filterStatus').value  = '';
     document.getElementById('filterSeries').value  = '';
     applyFilters();
 }
@@ -921,8 +801,7 @@ function sortTable(col) {
         4: 'angle',
         5: 'height',
         6: 'radius',
-        7: 'status',
-        8: 'series',
+        7: 'series',
     };
     const attr = dataAttrMap[col] ?? 'name';
 

@@ -24,7 +24,9 @@ RUN docker-php-ext-install pdo pdo_mysql
 COPY app/ /var/www/html/
 COPY --from=revision /REVISION /var/www/html/REVISION
 COPY app/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh /var/www/html/write_revision.php
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /var/www/html/write_revision.php \
+    && chown www-data:www-data /var/www/html/REVISION \
+    && chmod 664 /var/www/html/REVISION
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["apache2-foreground"]

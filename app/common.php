@@ -21,7 +21,60 @@ function parseGithubRepo(): ?array {
 }
 
 /**
- * Letzten Commit von GitHub (privates Repo benoetigt GITHUB_TOKEN).
+ * GitHub Release-Tag (z. B. v1.0.0) oder null wenn kein Release existiert.
+ */
+function fetchGithubLatestRelease(): ?string {
+    $github = parseGithubRepo();
+    if (!$github) {
+        return null;
+    }
+
+    $url = sprintf(
+        'https://api.github.com/repos/%s/%s/releases/latest',
+        rawurlencode($github['owner']),
+        rawurlencode($github['repo'])
+    );
+
+    $response = githubApiGet($url);
+    if (!$response) {
+        return null;
+    }
+
+    $data = json_decode($response, true);
+    $tag  = $data['tag_name'] ?? null;
+
+    return (is_string($tag) && $tag !== '') ? $tag : null;
+}
+
+/**
+ * HTTP-GET gegen die GitHub API.
+ */
+function githubApiGet(string $url): ?string {
+    $headers = "User-Agent: akeneo-pim-utilities\r\nAccept: application/vnd.github+json\r\n";
+    $token   = getenv('GITHUB_TOKEN');
+    if (is_string($token) && $token !== '') {
+        $headers .= "Authorization: Bearer {$token}\r\n";
+    }
+
+    $context = stream_context_create([
+        'http' => [
+            'method'  => 'GET',
+            'header'  => $headers,
+            'timeout' => 8,
+        ],
+        'ssl' => [
+            'verify_peer'      => true,
+            'verify_peer_name' => true,
+        ],
+    ]);
+
+    $response = @file_get_contents($url, false, $context);
+
+    return ($response === false) ? null : $response;
+}
+
+/**
+ * Letzten Commit von GitHub (public repo ohne Token moeglich).
  */
 function fetchGithubRevisionFromRepo(): ?string {
     $github = parseGithubRepo();
@@ -44,26 +97,8 @@ function fetchGithubRevisionFromRepo(): ?string {
         rawurlencode($github['branch'])
     );
 
-    $headers = "User-Agent: akeneo-pim-utilities\r\nAccept: application/vnd.github+json\r\n";
-    $token   = getenv('GITHUB_TOKEN');
-    if (is_string($token) && $token !== '') {
-        $headers .= "Authorization: Bearer {$token}\r\n";
-    }
-
-    $context = stream_context_create([
-        'http' => [
-            'method'  => 'GET',
-            'header'  => $headers,
-            'timeout' => 8,
-        ],
-        'ssl' => [
-            'verify_peer'      => true,
-            'verify_peer_name' => true,
-        ],
-    ]);
-
-    $response = @file_get_contents($url, false, $context);
-    if ($response === false) {
+    $response = githubApiGet($url);
+    if ($response === null) {
         return null;
     }
 
@@ -109,6 +144,11 @@ function computeSourceRevisionHash(): string {
  * Revision ermitteln (ohne REVISION-Datei zu lesen).
  */
 function resolveAppRevision(): string {
+    $release = fetchGithubLatestRelease();
+    if ($release) {
+        return $release;
+    }
+
     $fromGithub = fetchGithubRevisionFromRepo();
     if ($fromGithub) {
         return $fromGithub;
@@ -128,12 +168,17 @@ function resolveAppRevision(): string {
     return computeSourceRevisionHash();
 }
 
+/** Ist der gespeicherte Revisionswert veraltet (Platzhalter vom Build)? */
+function isStaleRevisionValue(string $value): bool {
+    return $value === '' || $value === 'dev' || str_starts_with($value, 'src');
+}
+
 /** REVISION-Datei beim Container-Start aktualisieren. */
 function refreshRevisionFile(): void {
     $revFile = __DIR__ . '/REVISION';
     $current = is_readable($revFile) ? trim((string)file_get_contents($revFile)) : '';
 
-    if ($current !== '' && $current !== 'dev' && !str_starts_with($current, 'src-')) {
+    if ($current !== '' && !isStaleRevisionValue($current)) {
         return;
     }
 
@@ -154,12 +199,17 @@ function getAppRevision(): string {
         return $revision = $fromEnv;
     }
 
-    $revFile = __DIR__ . '/REVISION';
-    if (is_readable($revFile)) {
-        $fromFile = trim((string)file_get_contents($revFile));
-        if ($fromFile !== '' && $fromFile !== 'dev') {
-            return $revision = $fromFile;
+    $revFile  = __DIR__ . '/REVISION';
+    $fromFile = is_readable($revFile) ? trim((string)file_get_contents($revFile)) : '';
+
+    if (isStaleRevisionValue($fromFile)) {
+        $resolved = resolveAppRevision();
+        if ($resolved !== '') {
+            @file_put_contents($revFile, $resolved . PHP_EOL);
+            return $revision = $resolved;
         }
+    } elseif ($fromFile !== '') {
+        return $revision = $fromFile;
     }
 
     return $revision = resolveAppRevision();
