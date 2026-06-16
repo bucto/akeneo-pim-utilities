@@ -236,6 +236,70 @@ function getAkeneoProductsByFamilies(array $familyCodes, array $onlyAttrs = []):
 }
 
 /**
+ * Holt Produktmodelle aus MEHREREN Familien in einem paginierten API-Call.
+ * Optional nur Root-Modelle (parent leer) und nur bestimmte Attribute.
+ *
+ * @param  array  $familyCodes
+ * @param  array  $onlyAttrs
+ * @param  bool   $rootOnly  Nur Modelle ohne Parent (keine Unter-Modelle)
+ * @return array
+ */
+function getAkeneoProductModelsByFamilies(array $familyCodes, array $onlyAttrs = [], bool $rootOnly = true): array {
+    if (empty($familyCodes)) return [];
+
+    $accessToken = getAccessToken();
+    $allModels   = [];
+    $page        = 1;
+    $limit       = 100;
+
+    $searchParams = ['family' => [['operator' => 'IN', 'value' => $familyCodes]]];
+    if ($rootOnly) {
+        $searchParams['parent'] = [['operator' => 'EMPTY']];
+    }
+
+    $searchQuery = urlencode(json_encode($searchParams));
+    $attrsParam  = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
+
+    while (true) {
+        $url      = API_BASE_URL . "/product-models?search={$searchQuery}&page={$page}&limit={$limit}{$attrsParam}";
+        $response = apiGet($url, $accessToken);
+
+        if ($response === null || isset($response['code'])) break;
+
+        $items = $response['_embedded']['items'] ?? [];
+        if (empty($items)) break;
+
+        foreach ($items as &$model) {
+            $model['_imageUrl'] = extractProductImageUrl($model);
+        }
+        unset($model);
+
+        $allModels = array_merge($allModels, $items);
+
+        if (!isset($response['_links']['next']) || count($items) < $limit) break;
+        $page++;
+    }
+
+    return $allModels;
+}
+
+/**
+ * Deutsche Produktbezeichnung aus values extrahieren.
+ */
+function extractProductName(array $entity, string $locale = 'de_DE'): ?string {
+    $name = null;
+    foreach ($entity['values']['product_name'] ?? [] as $val) {
+        if (($val['locale'] ?? null) === $locale) {
+            return is_string($val['data'] ?? null) ? $val['data'] : null;
+        }
+        if (($val['locale'] ?? null) === null && $name === null) {
+            $name = is_string($val['data'] ?? null) ? $val['data'] : null;
+        }
+    }
+    return $name;
+}
+
+/**
  * Holt Produkte basierend auf einer Produktfamilie, trennt sie nach Status
  * und ergänzt jeweils die erste Bild-URL.
  */

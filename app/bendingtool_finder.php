@@ -1,14 +1,13 @@
 <?php
 include('api_helper.php');
 
-// --- Cache-Datei ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_cache.json';
+// --- Cache-Datei (Produktmodelle) ---
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_models_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 
 function loadBendingToolData(): array {
-    // Familien mit Präfix bendingtool_
-    $allFamilies    = getAkeneoFamilies();
+    $allFamilies = getAkeneoFamilies();
     $bendingFamilies = array_values(array_filter(
         $allFamilies,
         fn($f) => str_starts_with($f['code'], 'bendingtool_')
@@ -16,31 +15,37 @@ function loadBendingToolData(): array {
 
     if (empty($bendingFamilies)) return [];
 
-    // Nur die benötigten Attribute laden (massiv kleinere API-Antworten)
-    $imageAttrs   = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
-    $filterAttrs  = ['bendingtool_die_1v_size', 'bendingtool_die_1v_angle'];
-    $onlyAttrs    = array_unique(array_merge($filterAttrs, $imageAttrs));
+    $imageAttrs  = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
+    $filterAttrs = ['bendingtool_die_1v_size', 'bendingtool_die_1v_angle', 'product_name'];
+    $onlyAttrs   = array_unique(array_merge($filterAttrs, $imageAttrs));
 
-    // Alle Familien in EINEM einzigen paginierten API-Call
-    $familyCodes = array_column($bendingFamilies, 'code');
-    $familyLabels = array_column($bendingFamilies, 'labels', 'code');
-    $products    = getAkeneoProductsByFamilies($familyCodes, $onlyAttrs);
+    $familyCodes  = array_column($bendingFamilies, 'code');
+    $familyLabels = [];
+    foreach ($bendingFamilies as $f) {
+        $familyLabels[$f['code']] = $f['labels']['de_DE'] ?? $f['code'];
+    }
+
+    // Nur Root-Produktmodelle (Varianten = einzelne Werkzeuglängen werden ausgelassen)
+    $models = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, true);
 
     $rows = [];
-    foreach ($products as $product) {
-        $fc   = $product['family'] ?? '';
+    foreach ($models as $model) {
+        $fc    = $model['family'] ?? '';
+        $code  = $model['code'] ?? '';
+        $name  = extractProductName($model) ?? $code;
+
         $rows[] = [
-            'identifier'  => $product['identifier'],
+            'code'        => $code,
+            'name'        => $name,
             'familyCode'  => $fc,
-            'familyLabel' => $familyLabels[$fc]['de_DE'] ?? $fc,
-            'enabled'     => $product['enabled'] ?? true,
-            'imageUrl'    => $product['_imageUrl'] ?? null,
-            'size'        => extractAttrValue($product, 'bendingtool_die_1v_size'),
-            'angle'       => extractAttrValue($product, 'bendingtool_die_1v_angle'),
+            'familyLabel' => $familyLabels[$fc] ?? $fc,
+            'imageUrl'    => $model['_imageUrl'] ?? null,
+            'size'        => extractAttrValue($model, 'bendingtool_die_1v_size'),
+            'angle'       => extractAttrValue($model, 'bendingtool_die_1v_angle'),
         ];
     }
 
-    usort($rows, fn($a, $b) => strcasecmp($a['identifier'], $b['identifier']));
+    usort($rows, fn($a, $b) => strcasecmp($a['name'], $b['name']));
     return $rows;
 }
 
@@ -266,6 +271,16 @@ foreach ($rows as $r) {
             font-weight: 600;
             font-size: 13px;
         }
+        .model-name {
+            font-size: 14px;
+            color: var(--dark-gray);
+        }
+        .model-code {
+            display: block;
+            font-size: 11px;
+            color: #718096;
+            margin-top: 2px;
+        }
         .family-badge {
             font-size: 11px;
             background: var(--hover-bg);
@@ -277,6 +292,13 @@ foreach ($rows as $r) {
         }
         .status-active   { color: #276749; font-weight: 600; font-size: 12px; }
         .status-disabled { color: #a0aec0; font-size: 12px; }
+
+        .page-hint {
+            font-size: 13px;
+            color: #718096;
+            margin: -8px 0 18px;
+            line-height: 1.5;
+        }
 
         .val-highlight {
             font-weight: 700;
@@ -310,11 +332,16 @@ foreach ($rows as $r) {
     </div>
 </div>
 
+<p class="page-hint">
+    Es werden nur <strong>Produktmodelle</strong> angezeigt — nicht die einzelnen Varianten mit unterschiedlichen Werkzeuglängen oder Radien.
+    So finden Sie schneller das passende Werkzeugmodell; die konkrete Länge wählen Sie anschließend im PIM oder Katalog.
+</p>
+
 <!-- Filter-Leiste -->
 <div class="filter-bar">
     <div class="filter-group">
-        <label>Artikelnummer</label>
-        <input type="search" id="filterSku" placeholder="Suchen …" oninput="applyFilters()">
+        <label>Modell suchen</label>
+        <input type="search" id="filterSearch" placeholder="Name oder Modellcode …" oninput="applyFilters()">
     </div>
     <div class="filter-group">
         <label>V-Öffnung (bendingtool_die_1v_size)</label>
@@ -338,49 +365,39 @@ foreach ($rows as $r) {
             <?php endforeach; ?>
         </select>
     </div>
-    <div class="filter-group">
-        <label>Status</label>
-        <select id="filterStatus" onchange="applyFilters()">
-            <option value="">Alle</option>
-            <option value="1">Nur aktive</option>
-            <option value="0">Nur deaktivierte</option>
-        </select>
-    </div>
     <button class="btn-reset" onclick="resetFilters()">↺ Filter zurücksetzen</button>
     <span class="filter-count" id="resultCount"></span>
 </div>
 
-<!-- Produkttabelle -->
+<!-- Modell-Tabelle -->
 <div class="table-wrap">
     <table id="productTable">
         <thead>
             <tr>
                 <th style="width:60px;cursor:default;"></th>
-                <th onclick="sortTable(1)" data-col="1">Artikelnummer <span class="sort-icon"></span></th>
+                <th onclick="sortTable(1)" data-col="1">Bezeichnung <span class="sort-icon"></span></th>
                 <th onclick="sortTable(2)" data-col="2">Familie <span class="sort-icon"></span></th>
                 <th onclick="sortTable(3)" data-col="3">V-Öffnung <span class="sort-icon"></span></th>
                 <th onclick="sortTable(4)" data-col="4">Winkel <span class="sort-icon"></span></th>
-                <th onclick="sortTable(5)" data-col="5">Status <span class="sort-icon"></span></th>
             </tr>
         </thead>
         <tbody>
         <?php if (empty($rows)): ?>
-            <tr><td colspan="6" class="no-results">
-                Keine Produkte aus Familien mit Präfix <code>bendingtool_</code> gefunden.<br>
-                Stelle sicher, dass die Familien in der PIM-Konfiguration nicht als „Nicht laden" markiert sind.
+            <tr><td colspan="5" class="no-results">
+                Keine Produktmodelle aus Familien mit Präfix <code>bendingtool_</code> gefunden.
             </td></tr>
         <?php else: ?>
             <?php foreach ($rows as $row): ?>
-            <tr class="<?php echo $row['enabled'] ? '' : 'disabled-row'; ?>"
-                data-sku="<?php echo strtolower(htmlspecialchars($row['identifier'])); ?>"
+            <tr data-code="<?php echo strtolower(htmlspecialchars($row['code'])); ?>"
+                data-name="<?php echo strtolower(htmlspecialchars($row['name'])); ?>"
+                data-family="<?php echo strtolower(htmlspecialchars($row['familyLabel'])); ?>"
                 data-size="<?php echo htmlspecialchars($row['size']['raw'] ?? ''); ?>"
-                data-angle="<?php echo htmlspecialchars($row['angle']['raw'] ?? ''); ?>"
-                data-enabled="<?php echo $row['enabled'] ? '1' : '0'; ?>">
+                data-angle="<?php echo htmlspecialchars($row['angle']['raw'] ?? ''); ?>">
                 <td>
                     <?php if ($row['imageUrl']): ?>
                         <img class="product-thumb"
                              src="<?php echo htmlspecialchars($row['imageUrl']); ?>"
-                             alt="<?php echo htmlspecialchars($row['identifier']); ?>"
+                             alt="<?php echo htmlspecialchars($row['name']); ?>"
                              loading="lazy"
                              onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
                         <span class="thumb-placeholder" style="display:none;">📷</span>
@@ -388,17 +405,13 @@ foreach ($rows as $r) {
                         <span class="thumb-placeholder">📷</span>
                     <?php endif; ?>
                 </td>
-                <td><span class="sku"><?php echo htmlspecialchars($row['identifier']); ?></span></td>
+                <td>
+                    <span class="model-name"><?php echo htmlspecialchars($row['name']); ?></span>
+                    <span class="model-code"><?php echo htmlspecialchars($row['code']); ?></span>
+                </td>
                 <td><span class="family-badge"><?php echo htmlspecialchars($row['familyLabel']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['size']['display']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['angle']['display']); ?></span></td>
-                <td>
-                    <?php if ($row['enabled']): ?>
-                        <span class="status-active">● Aktiv</span>
-                    <?php else: ?>
-                        <span class="status-disabled">○ Deaktiviert</span>
-                    <?php endif; ?>
-                </td>
             </tr>
             <?php endforeach; ?>
         <?php endif; ?>
@@ -410,19 +423,19 @@ foreach ($rows as $r) {
 const tbody = document.querySelector('#productTable tbody');
 
 function applyFilters() {
-    const sku    = document.getElementById('filterSku').value.toLowerCase().trim();
+    const search = document.getElementById('filterSearch').value.toLowerCase().trim();
     const size   = document.getElementById('filterSize').value;
     const angle  = document.getElementById('filterAngle').value;
-    const status = document.getElementById('filterStatus').value;
 
     let visible = 0;
-    tbody.querySelectorAll('tr[data-sku]').forEach(row => {
-        const matchSku    = !sku    || row.dataset.sku.includes(sku);
-        const matchSize   = !size   || row.dataset.size  === size;
-        const matchAngle  = !angle  || row.dataset.angle === angle;
-        const matchStatus = !status || row.dataset.enabled === status;
+    tbody.querySelectorAll('tr[data-code]').forEach(row => {
+        const matchSearch = !search
+            || row.dataset.code.includes(search)
+            || row.dataset.name.includes(search);
+        const matchSize   = !size  || row.dataset.size  === size;
+        const matchAngle  = !angle || row.dataset.angle === angle;
 
-        if (matchSku && matchSize && matchAngle && matchStatus) {
+        if (matchSearch && matchSize && matchAngle) {
             row.classList.remove('hidden');
             visible++;
         } else {
@@ -430,16 +443,15 @@ function applyFilters() {
         }
     });
 
-    const total = tbody.querySelectorAll('tr[data-sku]').length;
+    const total = tbody.querySelectorAll('tr[data-code]').length;
     document.getElementById('resultCount').textContent =
-        visible === total ? `${total} Produkte` : `${visible} von ${total} Produkten`;
+        visible === total ? `${total} Modelle` : `${visible} von ${total} Modellen`;
 }
 
 function resetFilters() {
-    document.getElementById('filterSku').value    = '';
+    document.getElementById('filterSearch').value = '';
     document.getElementById('filterSize').value   = '';
     document.getElementById('filterAngle').value  = '';
-    document.getElementById('filterStatus').value = '';
     applyFilters();
 }
 
@@ -447,8 +459,7 @@ function resetFilters() {
 let sortCol = -1, sortAsc = true;
 
 function sortTable(col) {
-    const rows  = Array.from(tbody.querySelectorAll('tr[data-sku]'));
-    const cols  = ['', 'sku', 'size', 'size', 'angle', 'enabled']; // mapping per th index
+    const rows = Array.from(tbody.querySelectorAll('tr[data-code]'));
 
     if (sortCol === col) { sortAsc = !sortAsc; }
     else { sortCol = col; sortAsc = true; }
@@ -458,15 +469,14 @@ function sortTable(col) {
         if (i === col) th.classList.add(sortAsc ? 'sorted-asc' : 'sorted-desc');
     });
 
-    // data-attribute by col
-    const dataAttrMap = {1: 'sku', 2: 'sku', 3: 'size', 4: 'angle', 5: 'enabled'};
-    const attr = dataAttrMap[col] ?? 'sku';
+    const dataAttrMap = {1: 'name', 2: 'family', 3: 'size', 4: 'angle'};
+    const attr = dataAttrMap[col] ?? 'name';
 
     rows.sort((a, b) => {
         const va = a.dataset[attr] ?? '';
         const vb = b.dataset[attr] ?? '';
         const numA = parseFloat(va), numB = parseFloat(vb);
-        let cmp = (!isNaN(numA) && !isNaN(numB))
+        let cmp = (!isNaN(numA) && !isNaN(numB) && va !== '' && vb !== '')
             ? numA - numB
             : va.localeCompare(vb, 'de');
         return sortAsc ? cmp : -cmp;
