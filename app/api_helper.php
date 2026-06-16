@@ -1,43 +1,52 @@
 <?php
-// Konfiguration einbinden
-include('config.php');
+include_once('config.php');
 
 /**
- * Holt das Access Token vom Akeneo PIM
+ * Erstellt einen Stream-Kontext für HTTP-Requests an die Akeneo API.
+ * Respektiert PIM_TLS_INSECURE für selbstsignierte Zertifikate.
  */
-function getAccessToken() {
-    $data = [
-        'grant_type' => 'password',
-        'username' => API_USERNAME,
-        'password' => API_PASSWORD,
-        'client_id' => CLIENT_ID,
-        'client_secret' => CLIENT_SECRET
-    ];
-
-    $options = [
+function makeApiContext(string $method, array $headers, string $body = ''): mixed {
+    $opts = [
         'http' => [
-            'header' => "Content-Type: application/x-www-form-urlencoded\r\n",
-            'method' => 'POST',
-            'content' => http_build_query($data),
-            'ignore_errors' => true
+            'method'        => $method,
+            'header'        => $headers,
+            'ignore_errors' => true,
         ],
         'ssl' => [
-            'verify_peer' => false,
-            'verify_peer_name' => false,
-        ]
+            'verify_peer'      => !TLS_INSECURE,
+            'verify_peer_name' => !TLS_INSECURE,
+        ],
     ];
+    if ($body !== '') {
+        $opts['http']['content'] = $body;
+    }
+    return stream_context_create($opts);
+}
 
-    $context = stream_context_create($options);
-    $result = @file_get_contents(TOKEN_URL, false, $context);
+/**
+ * Holt das Access Token vom Akeneo PIM (OAuth2 Password Grant).
+ */
+function getAccessToken(): string {
+    $body = http_build_query([
+        'grant_type'    => 'password',
+        'username'      => API_USERNAME,
+        'password'      => API_PASSWORD,
+        'client_id'     => CLIENT_ID,
+        'client_secret' => CLIENT_SECRET,
+    ]);
 
-    if ($result === FALSE) {
-        die('Fehler: Die Token-URL konnte nicht erreicht werden. Prüfe die IP-Adresse in Portainer.');
+    $context = makeApiContext('POST', ["Content-Type: application/x-www-form-urlencoded"], $body);
+    $result  = @file_get_contents(TOKEN_URL, false, $context);
+
+    if ($result === false) {
+        die('Fehler: Die Token-URL konnte nicht erreicht werden (' . TOKEN_URL . '). Prüfe die Umgebungsvariablen.');
     }
 
     $response = json_decode($result, true);
 
     if ($response === null || !isset($response['access_token'])) {
         echo "<h3>API-Verbindungsfehler beim Token-Abruf</h3>";
+        echo "<strong>URL:</strong> " . htmlspecialchars(TOKEN_URL) . "<br>";
         echo "<strong>Antwort von Akeneo:</strong> <pre>" . htmlspecialchars($result) . "</pre>";
         die();
     }
@@ -46,85 +55,76 @@ function getAccessToken() {
 }
 
 /**
- * Holt alle Produktfamilien aus Akeneo für Schritt 1
+ * Führt einen authentifizierten GET-Request gegen die Akeneo API aus.
  */
-function getAkeneoFamilies() {
-    $accessToken = getAccessToken();
-    $url = API_BASE_URL . "/families?limit=100";
-
-    $options = [
-        'http' => [
-            'header' => ["Authorization: Bearer $accessToken", "Content-Type: application/json"],
-            'method' => 'GET',
-            'ignore_errors' => true
-        ],
-        'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
-    ];
-
-    $context = stream_context_create($options);
+function apiGet(string $url, string $accessToken): ?array {
+    $context = makeApiContext('GET', [
+        "Authorization: Bearer $accessToken",
+        "Content-Type: application/json",
+    ]);
     $result = @file_get_contents($url, false, $context);
-    
-    if ($result === FALSE) {
-        die("Fehler beim Abrufen der Produktfamilien.");
-    }
-
-    $response = json_decode($result, true);
-    return isset($response['_embedded']['items']) ? $response['_embedded']['items'] : [];
+    return $result !== false ? json_decode($result, true) : null;
 }
 
 /**
- * Holt Produkte basierend auf einer Produktfamilie und trennt sie nach Status
+ * Extrahiert die erste Bild-URL aus den Produktwerten.
+ * Gibt null zurück wenn kein Bild vorhanden.
  */
-function getAkeneoProductsByFamily($familyCode) {
+function extractProductImageUrl(array $product): ?string {
+    $attrs = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
+
+    foreach ($attrs as $attr) {
+        $filePath = $product['values'][$attr][0]['data'] ?? null;
+        if ($filePath && is_string($filePath) && $filePath !== '') {
+            return rtrim(PIM_MEDIA_BASE_URL, '/') . '/media/cache/' . PIM_MEDIA_CACHE . '/' . ltrim($filePath, '/');
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Holt alle Produktfamilien aus Akeneo.
+ */
+function getAkeneoFamilies(): array {
+    $accessToken = getAccessToken();
+    $response    = apiGet(API_BASE_URL . "/families?limit=100", $accessToken);
+    return $response['_embedded']['items'] ?? [];
+}
+
+/**
+ * Holt Produkte basierend auf einer Produktfamilie, trennt sie nach Status
+ * und ergänzt jeweils die erste Bild-URL.
+ */
+function getAkeneoProductsByFamily(string $familyCode): array {
     $accessToken = getAccessToken();
     $allProducts = [];
-    $page = 1;
-    $limit = 100;
+    $page        = 1;
+    $limit       = 100;
 
     while (true) {
         $searchParams = ['family' => [['operator' => 'IN', 'value' => [$familyCode]]]];
-        $url = API_BASE_URL . "/products?search=" . urlencode(json_encode($searchParams)) . "&page=$page&limit=$limit";
+        $url          = API_BASE_URL . "/products?search=" . urlencode(json_encode($searchParams))
+                        . "&page=$page&limit=$limit";
 
-        $options = [
-            'http' => [
-                'header' => ["Authorization: Bearer $accessToken", "Content-Type: application/json"],
-                'method' => 'GET',
-                'ignore_errors' => true
-            ],
-            'ssl' => ['verify_peer' => false, 'verify_peer_name' => false]
-        ];
+        $response = apiGet($url, $accessToken);
 
-        $context = stream_context_create($options);
-        $result = @file_get_contents($url, false, $context);
-
-        if ($result === FALSE) {
-            die("Fehler beim Abrufen der Produkte.");
-        }
-
-        $response = json_decode($result, true);
-
-        if ($response === null || isset($response['code'])) {
-            break;
-        }
-
-        if (empty($response['_embedded']['items'])) {
-            break;
-        }
+        if ($response === null || isset($response['code'])) break;
+        if (empty($response['_embedded']['items'])) break;
 
         $allProducts = array_merge($allProducts, $response['_embedded']['items']);
 
-        if (!isset($response['_links']['next']) || count($response['_embedded']['items']) < $limit) {
-            break;
-        }
+        if (!isset($response['_links']['next']) || count($response['_embedded']['items']) < $limit) break;
 
         $page++;
     }
 
-    // Sortierung und Aufteilung
-    $activeProducts = [];
+    $activeProducts   = [];
     $disabledProducts = [];
 
     foreach ($allProducts as $product) {
+        $product['_imageUrl'] = extractProductImageUrl($product);
+
         if (isset($product['enabled']) && $product['enabled'] === false) {
             $disabledProducts[] = $product;
         } else {
@@ -132,8 +132,8 @@ function getAkeneoProductsByFamily($familyCode) {
         }
     }
 
-    usort($activeProducts, function($a, $b) { return strcasecmp($a['identifier'], $b['identifier']); });
-    usort($disabledProducts, function($a, $b) { return strcasecmp($a['identifier'], $b['identifier']); });
+    usort($activeProducts,   fn($a, $b) => strcasecmp($a['identifier'], $b['identifier']));
+    usort($disabledProducts, fn($a, $b) => strcasecmp($a['identifier'], $b['identifier']));
 
     return ['active' => $activeProducts, 'disabled' => $disabledProducts];
 }

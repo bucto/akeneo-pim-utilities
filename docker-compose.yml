@@ -1,17 +1,31 @@
-version: '3.8'
-
 services:
-  # --- NUR DAS PHP FRONTEND & LOGIK ---
+
   web_frontend:
     build: ./app
-    container_name: akeneo_web_app
-    restart: always
+    container_name: akeneo_pim_utilities
+    restart: unless-stopped
     ports:
-      - "${APP_PORT:-8085}:80"  # Nutzt weiterhin deinen Port 8098 aus Portainer
+      - "${APP_PORT:-8085}:80"
     environment:
-      - API_BASE_URL
-      - TOKEN_URL
-      - API_USERNAME
-      - API_PASSWORD
-      - CLIENT_ID
-      - CLIENT_SECRET
+      DB_HOST:     ${DB_HOST:-amada-db-mariadb11}
+      DB_PORT:     ${DB_PORT:-3306}
+      DB_NAME:     ${DB_NAME:-}
+      DB_USER:     ${DB_USER:-}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+      PIM_API_BASE_URL:  ${PIM_API_BASE_URL:-}
+      PIM_API_USERNAME:  ${PIM_API_USERNAME:-}
+      PIM_API_PASSWORD:  ${PIM_API_PASSWORD:-}
+      PIM_CLIENT_ID:     ${PIM_CLIENT_ID:-}
+      PIM_CLIENT_SECRET: ${PIM_CLIENT_SECRET:-}
+      PIM_TLS_INSECURE:  ${PIM_TLS_INSECURE:-true}
+      PIM_MEDIA_BASE_URL: ${PIM_MEDIA_BASE_URL:-}
+      PIM_MEDIA_CACHE:    ${PIM_MEDIA_CACHE:-thumbnail_small}
+      PIM_IMAGE_ATTRS:    ${PIM_IMAGE_ATTRS:-picture,filename_picture_perspective}
+    networks:
+      - default
+      - amada-db
+
+networks:
+  amada-db:
+    external: true
+    name: ${DB_NETWORK:-amada-db-network}
