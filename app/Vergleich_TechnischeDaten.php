@@ -211,13 +211,34 @@
             }
 
             $rawVal = $data[0]['data'] ?? null;
-            if ($rawVal && is_string($rawVal) && !is_numeric($rawVal) && !isset($optionsMap[$attribute])) {
+
+            // Option-Labels laden für:
+            // a) Einfacher Select: $rawVal ist ein nicht-numerischer String
+            // b) Multi-Select:     $rawVal ist ein numerisch-indiziertes Array von Strings
+            //    (Maßattribute haben 'amount'/'unit'-Schlüssel → kein Option-Lookup)
+            $needsOptionLookup = false;
+            if (!isset($optionsMap[$attribute])) {
+                if (is_string($rawVal) && $rawVal !== '' && !is_numeric($rawVal)) {
+                    $needsOptionLookup = true;
+                } elseif (is_array($rawVal)
+                    && !array_key_exists('amount', $rawVal)
+                    && !empty($rawVal)
+                    && is_string(array_values($rawVal)[0])) {
+                    $needsOptionLookup = true;
+                }
+            }
+
+            if ($needsOptionLookup) {
                 $options = getMatrixAttributeOptions(API_BASE_URL, $accessToken, $attribute);
                 if ($options && isset($options['_embedded']['items'])) {
                     foreach ($options['_embedded']['items'] as $option) {
                         $optionsMap[$attribute][$option['code']] =
                             $option['labels']['de_DE'] ?? $option['code'];
                     }
+                }
+                // Leeres Array als Marker setzen, damit der Lookup nicht erneut ausgelöst wird
+                if (!isset($optionsMap[$attribute])) {
+                    $optionsMap[$attribute] = [];
                 }
             }
         }
