@@ -1,118 +1,280 @@
-# AMADA PIM-Vergleichstool
+# AMADA PIM Utilities
 
-## Was macht dieses Tool?
+Weboberfläche zum **Vergleichen von AMADA-Produkten** und zum **Suchen von Abkantwerkzeugen** — Daten kommen live aus dem Akeneo PIM.
 
-Dieses Tool hilft dabei, **Produkte aus dem AMADA Produktkatalog (PIM) schnell und übersichtlich miteinander zu vergleichen** — direkt im Browser, ohne Excel, ohne manuelle Recherche.
-
-Das PIM (Product Information Management System) ist die zentrale Datenbank, in der alle technischen Daten, Bilder und Eigenschaften der AMADA-Produkte gepflegt werden. Dieses Tool greift auf genau diese Daten zu und stellt sie so dar, dass man mehrere Produkte nebeneinander vergleichen kann.
+**Repository:** [github.com/bucto/akeneo-pim-utilities](https://github.com/bucto/akeneo-pim-utilities)
 
 ---
 
-## Was kann ich damit tun?
+## Inhalt
 
-Die Startseite bietet zwei Hauptbereiche:
+- [Funktionen](#funktionen)
+- [Architektur](#architektur)
+- [Voraussetzungen](#voraussetzungen)
+- [Schnellstart (Docker)](#schnellstart-docker)
+- [Konfiguration](#konfiguration)
+- [Datenbank einrichten](#datenbank-einrichten)
+- [Deployment (Portainer)](#deployment-portainer)
+- [Projektstruktur](#projektstruktur)
+- [Sicherheit](#sicherheit)
+- [Hinweise zur PIM-Datenstruktur](#hinweise-zur-pim-datenstruktur)
 
-### 1. Produkt-Vergleich
+---
 
-Mehrere Produkte einer Familie auswählen und nebeneinander vergleichen — technische Daten oder Ausstattung.
+## Funktionen
 
-Auf der Vergleichsseite gibt es fünf Reiter (Tabs):
+### Startseite
 
-| Tab | Enthält |
+Zwei Module:
+
+| Modul | Beschreibung |
 |---|---|
-| **Maschinen** | Laser-, Stanz- und Abkantmaschinen |
-| **Automation** | Automatisierungslösungen und Beladesysteme |
-| **Zubehör** | Optionales Zubehör für Maschinen |
-| **Stanzwerkzeuge** | Werkzeuge für Stanzmaschinen |
-| **Abkantwerkzeuge** | Werkzeuge für Abkantpressen |
+| **Produkt-Vergleich** | Produkte einer Familie auswählen und nebeneinander vergleichen |
+| **Werkzeugfinder** | Abkant-Werkzeugmodelle filtern und Varianten (Längen) anzeigen |
 
-In jedem Reiter wählt man zunächst eine **Produktfamilie** (z.B. „Laserschneidmaschinen") aus einem Dropdown-Menü. Danach erscheint die Liste aller Produkte dieser Familie — mit Produktbild, Artikelnummer und Status (aktiv/deaktiviert).
+### Produkt-Vergleich
 
-### 2. Werkzeugfinder
+Fünf Reiter (Tabs), Zuordnung der PIM-Familien konfigurierbar:
 
-Abkant-Werkzeug**modelle** nach V-Öffnung und Winkel filtern — für die schnelle Suche nach dem passenden Werkzeugtyp (ohne alle Längenvarianten).
+| Tab | Typische Inhalte |
+|---|---|
+| Maschinen | Laser-, Stanz- und Abkantmaschinen |
+| Automation | Automatisierung, Beladesysteme |
+| Zubehör | Optionales Zubehör |
+| Stanzwerkzeuge | Werkzeuge für Stanzmaschinen |
+| Abkantwerkzeuge | Werkzeuge für Abkantpressen |
 
-### 3. Admin (nur mit `ADMIN_ENABLED=true`)
+Pro Familie werden Produkte mit Bild, Artikelnummer und Status (aktiv/deaktiviert) gelistet. Mehrere Artikel können verglichen werden:
 
-PIM-Familien den Tabs zuweisen. Für normale Nutzer **nicht sichtbar** — nur Admins sehen den Link und können `pim_family_settings.php` aufrufen.
+- **Technische Daten** — Attribute mit Einheiten (`6500 mm`, `80 kg`, …), deutsche Labels für Select-Werte
+- **Ausstattung & Verbindungen** — Assoziationen zwischen Produkten
 
----
+> **Mehrstufige Produktmodelle:** Viele technische Werte liegen in Akeneo auf übergeordneten Modell-Ebenen (z. B. Allgemein → Presskraft → Länge). Der Technik-Vergleich lädt diese Werte automatisch aus der gesamten Parent-Kette mit.
 
-## Produkt-Vergleich im Detail
+### Werkzeugfinder
 
-Man wählt beliebig viele Produkte per Checkbox aus und startet dann den Vergleich:
+- Zeigt **Produktmodelle** (nicht jede Längenvariante einzeln)
+- Filter: Suche, V-Öffnung, Winkel, Werkzeughöhe, Radius, Status, Serie
+- **Klick auf ein Modell** → alle bestellbaren Artikel mit Längen
+- 30-Minuten-Cache für schnelle Filterung
 
-- **Technische Daten vergleichen** — Zeigt alle technischen Eigenschaften (Abmessungen, Gewicht, Leistung, …) nebeneinander in einer Tabelle. Zahlenwerte werden mit der richtigen Einheit angezeigt (z.B. `6500 mm`, `80 kg`, `7 kW`). Option-Werte werden auf Deutsch übersetzt.
+Familien werden aus der Datenbank (Tab „Abkantwerkzeuge“) oder per Fallback über Code-Präfix `bendingtool_*` geladen.
 
-- **Ausstattung vergleichen** — Zeigt welche Zusatzgeräte und Komponenten jedem Produkt zugeordnet sind.
+### Admin (`ADMIN_ENABLED=true`)
 
-Beide Vergleichsansichten zeigen das Produktbild jedes Artikels im Tabellenkopf, sodass man sofort weiß, über welches Gerät man spricht.
-
----
-
-## Welche Vorteile bringt das Tool?
-
-**Ohne dieses Tool:**
-- Man muss im PIM-System mehrere Produktseiten einzeln öffnen und Daten manuell in eine Excel-Tabelle übertragen.
-- Das kostet Zeit, ist fehleranfällig und die Daten veralten schnell.
-- Nicht jeder hat Zugang zum PIM-System oder kennt sich damit aus.
-
-**Mit diesem Tool:**
-- Ein Vergleich von 5 Produkten dauert **weniger als eine Minute**.
-- Die Daten kommen immer **direkt aus dem PIM** — also immer aktuell, nie veraltet.
-- Die Anzeige ist übersichtlich aufbereitet: deutsche Bezeichnungen, lesbare Einheiten, Produktbilder.
-- **Jeder im Unternehmen** kann es nutzen — kein PIM-Wissen nötig.
-- Besonders nützlich für: Vertrieb, Produktmanagement, Messeplanung, technische Dokumentation.
+Seite `pim_family_settings.php`: PIM-Familien den Tabs zuweisen oder von der Anzeige ausschließen. Für normale Nutzer unsichtbar.
 
 ---
 
-## Technischer Überblick (für Admins)
+## Architektur
 
 | Komponente | Technologie |
 |---|---|
-| Weboberfläche | PHP 8.2 + Apache (Docker) |
-| Datenbank | Zentrale MariaDB über `amada-db-network` |
-| PIM-Anbindung | Akeneo REST API (OAuth2) |
-| Deployment | Docker / Portainer Stack |
-
-### Umgebungsvariablen (`.env`)
+| Frontend / Backend | PHP 8.2, Apache |
+| Container | Docker, `docker-compose.yml` |
+| Konfiguration | Umgebungsvariablen (`.env`, nicht im Git) |
+| Metadaten | MariaDB (`pim_family_config`) |
+| Produktdaten | Akeneo REST API (OAuth2 Password Grant) |
+| Deployment | Portainer Stack (Git-Anbindung) |
 
 ```
-APP_PORT=8085
-
-# Zentrale MariaDB
-DB_HOST=amada-db-mariadb11
-DB_PORT=3306
-DB_NETWORK=amada-db-network
-DB_NAME=
-DB_USER=
-DB_PASSWORD=
-
-# Akeneo PIM API
-PIM_API_BASE_URL=https://192.168.5.4/api/rest/v1
-PIM_API_USERNAME=
-PIM_API_PASSWORD=
-PIM_CLIENT_ID=
-PIM_CLIENT_SECRET=
-PIM_TLS_INSECURE=true
-
-# Produktbilder
-PIM_MEDIA_BASE_URL=https://pim.amada.de
-PIM_MEDIA_CACHE=thumbnail_small
-PIM_IMAGE_ATTRS=picture,filename_picture_perspective
-
-# Admin-Bereich (PIM-Familien konfigurieren) – nur true für Admins
-ADMIN_ENABLED=false
+Browser → PHP/Apache (Container) → Akeneo PIM API
+                  ↓
+            MariaDB (Familien-Zuordnung)
 ```
 
-### Deployment via Portainer
+---
 
-1. Neuen Stack anlegen → Repository-URL eintragen
-2. Automatic Updates aktivieren (aktualisiert sich bei jedem Git-Push automatisch)
-3. Umgebungsvariablen mit echten Werten befüllen
-4. „Deploy the stack" klicken
+## Voraussetzungen
 
-### Datenbank-Migration
+- Docker & Docker Compose
+- Erreichbares **Akeneo PIM** mit REST-API-Zugang (OAuth-Client)
+- **MariaDB/MySQL** mit Tabelle `pim_family_config` (siehe unten)
+- Externes Docker-Netzwerk zur DB (Standard: `amada-db-network`)
+- Für Produktbilder: erreichbare **PIM-Medien-URL** (`PIM_MEDIA_BASE_URL`)
 
-Beim ersten Start muss die Tabelle `pim_family_config` einmalig angelegt werden.
-Das SQL dazu liegt in `database/init/01_pim_family_config.sql` und kann direkt in phpMyAdmin ausgeführt werden.
+---
+
+## Schnellstart (Docker)
+
+```bash
+git clone https://github.com/bucto/akeneo-pim-utilities.git
+cd akeneo-pim-utilities
+cp .env.example .env
+# .env mit echten Werten befüllen (siehe Konfiguration)
+docker compose up -d --build
+```
+
+App erreichbar unter: `http://localhost:8085` (Port über `APP_PORT` änderbar)
+
+---
+
+## Konfiguration
+
+Vorlage: [`.env.example`](.env.example). **Niemals** die echte `.env` committen — sie steht in [`.gitignore`](.gitignore).
+
+### Docker & Netzwerk
+
+| Variable | Beschreibung | Beispiel |
+|---|---|---|
+| `APP_PORT` | Host-Port für die Weboberfläche | `8085` |
+| `DB_NETWORK` | Externes Docker-Netzwerk zur DB | `amada-db-network` |
+
+### MariaDB
+
+| Variable | Beschreibung |
+|---|---|
+| `DB_HOST` | Hostname des DB-Containers/Servers |
+| `DB_PORT` | Port (Standard `3306`) |
+| `DB_NAME` | Datenbankname |
+| `DB_USER` | Benutzer |
+| `DB_PASSWORD` | Passwort |
+
+### Akeneo PIM API
+
+| Variable | Beschreibung |
+|---|---|
+| `PIM_API_BASE_URL` | Vollständiger REST-Pfad, z. B. `https://pim.example.de/api/rest/v1` |
+| `PIM_API_USERNAME` | PIM-Benutzername |
+| `PIM_API_PASSWORD` | PIM-Passwort |
+| `PIM_CLIENT_ID` | OAuth-Client-ID |
+| `PIM_CLIENT_SECRET` | OAuth-Client-Secret |
+| `PIM_TLS_INSECURE` | `true` bei selbstsigniertem PIM-Zertifikat |
+| `PIM_LOCALE` | Locale für Produktwerte (Standard `de_DE`) |
+| `PIM_CHANNEL` | Akeneo-Kanal/Scope (Standard `ecommerce`) |
+
+### Produktbilder
+
+| Variable | Beschreibung |
+|---|---|
+| `PIM_MEDIA_BASE_URL` | Basis-URL für Medien (z. B. `https://pim.amada.de`) |
+| `PIM_MEDIA_CACHE` | Thumbnail-Profil (`thumbnail_small`, …) |
+| `PIM_IMAGE_ATTRS` | Kommagetrennte Bild-Attribut-Codes |
+
+### Werkzeugfinder (Attribut-Codes)
+
+Falls die Codes im PIM abweichen, per kommagetrennter Fallback-Kette anpassen:
+
+| Variable | Standard-Fallbacks |
+|---|---|
+| `PIM_BENDING_HEIGHT_ATTRS` | `bendingtool_tool_height`, `bendingtool_die_height`, … |
+| `PIM_BENDING_RADIUS_ATTRS` | `bendingtool_die_radius`, `bendingtool_radius`, … |
+| `PIM_BENDING_SERIES_ATTRS` | `series`, `bendingtool_series` |
+| `PIM_BENDING_LENGTH_ATTRS` | `bendingtool_tool_length`, `bendingtool_length`, … |
+
+### Admin & Footer
+
+| Variable | Beschreibung |
+|---|---|
+| `ADMIN_ENABLED` | `true` = Admin-Link und Einstellungsseite sichtbar |
+| `APP_AUTHOR` | Name im Footer |
+| `APP_REPO` | Repository-URL im Footer |
+| `APP_GIT_BRANCH` | Branch für Revisions-Anzeige (Standard `main`) |
+| `APP_REVISION` | Optionales manuelles Override der Revisionsnummer |
+| `GITHUB_TOKEN` | Optional; bei Rate-Limits oder privatem Fork |
+
+Die Revisionsnummer im Footer wird automatisch ermittelt (GitHub-API, Quellcode-Hash oder Build-Metadaten).
+
+---
+
+## Datenbank einrichten
+
+Die App funktioniert ohne DB im Fallback-Modus (alle Familien sichtbar), für die Tab-Zuordnung wird die Tabelle benötigt.
+
+**Neuinstallation:**
+
+```sql
+-- database/init/01_pim_family_config.sql
+```
+
+**Bestehende Installation (Migration):**
+
+```sql
+-- database/init/02_add_tool_categories.sql
+```
+
+SQL in phpMyAdmin oder per CLI ausführen. Danach im Admin die Familien den Tabs zuweisen.
+
+---
+
+## Deployment (Portainer)
+
+1. **Stack anlegen** → Repository-URL: `https://github.com/bucto/akeneo-pim-utilities`
+2. **Compose-Pfad:** `docker-compose.yml`
+3. **Umgebungsvariablen** aus `.env.example` übernehmen und mit echten Werten füllen
+4. Externes Netzwerk `amada-db-network` (oder `DB_NETWORK`) muss existieren
+5. **Deploy the stack** — bei Updates: **Pull and redeploy** mit **Rebuild**
+
+> Nach Code-Änderungen reicht ein Container-Neustart oft nicht — Stack **neu bauen**, damit PHP-Dateien und die Revisionsnummer aktualisiert werden.
+
+### Automatische Updates
+
+Portainer „Automatic updates“ kann bei Git-Push neu deployen. Secrets bleiben in den Stack-Umgebungsvariablen in Portainer — nicht im Git-Repository.
+
+---
+
+## Projektstruktur
+
+```
+akeneo-pim-utilities/
+├── app/
+│   ├── index.php                  # Startseite
+│   ├── produkt_vergleich.php      # Produktliste & Tab-Navigation
+│   ├── Vergleich_TechnischeDaten.php
+│   ├── Vergleich_Austattung.php
+│   ├── bendingtool_finder.php     # Werkzeugfinder
+│   ├── bendingtool_finder_api.php # Varianten-JSON (AJAX)
+│   ├── pim_family_settings.php    # Admin: Familien-Zuordnung
+│   ├── api_helper.php             # Akeneo API, Wert-Extraktion
+│   ├── db_helper.php              # MariaDB / pim_family_config
+│   ├── common.php                 # Layout, Footer, Navigation
+│   ├── config.php                 # Umgebungsvariablen
+│   └── Dockerfile
+├── database/init/                 # SQL-Schema & Migrationen
+├── docker-compose.yml
+├── .env.example                   # Vorlage (ohne Secrets)
+└── README.md
+```
+
+---
+
+## Sicherheit
+
+Dieses Repository ist **öffentlich**. Enthalten sind **keine** Passwörter, Tokens oder Client-Secrets.
+
+| ✅ Im Git | ❌ Nicht ins Git |
+|---|---|
+| `.env.example` (leere Platzhalter) | `.env` mit echten Werten |
+| Code & SQL-Schema | PIM-/DB-Zugangsdaten |
+| Docker-Konfiguration | `GITHUB_TOKEN` mit Schreibrechten |
+
+**Empfehlungen:**
+
+- Secrets nur in Portainer / Server-`.env` pflegen
+- `ADMIN_ENABLED=false` in Produktion, nur bei Bedarf aktivieren
+- OAuth-Client im PIM mit minimal nötigen Rechten
+- `PIM_TLS_INSECURE=true` nur für interne PIM-Instanzen mit selbstsigniertem Zertifikat
+
+---
+
+## Hinweise zur PIM-Datenstruktur
+
+### Einfache Produkte
+
+Attribute liegen direkt am Produkt — Vergleich und Anzeige funktionieren ohne Besonderheiten.
+
+### Mehrstufige Varianten (Product Models)
+
+Akeneo-Hierarchie, z. B. bei Polyurethan-Pads oder Abkantwerkzeugen:
+
+1. **Ebene 1** — Allgemeine Daten für alle Varianten  
+2. **Ebene 2** — Variantenachse (z. B. Presskraft)  
+3. **Ebene 3** — Bestellbare Artikel (z. B. Länge)
+
+Der Technik-Vergleich und der Werkzeugfinder berücksichtigen diese Struktur (Parent-Kette / Modell- vs. Varianten-Ebene).
+
+---
+
+## Autor
+
+Thomas Bücken — [github.com/bucto/akeneo-pim-utilities](https://github.com/bucto/akeneo-pim-utilities)
