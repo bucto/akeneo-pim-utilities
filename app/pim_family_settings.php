@@ -11,13 +11,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $dbOk) {
     $postedCodes = $_POST['families'] ?? [];
 
     foreach ($postedCodes as $code => $flags) {
-        $excluded       = isset($flags['excluded']);
-        $forProducts    = !$excluded && isset($flags['for_products']);
-        $forAutomation  = !$excluded && isset($flags['for_automation']);
-        $forAccessories = !$excluded && isset($flags['for_accessories']);
-        $label          = htmlspecialchars(strip_tags($flags['label'] ?? $code));
+        $excluded         = isset($flags['excluded']);
+        $forProducts      = !$excluded && isset($flags['for_products']);
+        $forAutomation    = !$excluded && isset($flags['for_automation']);
+        $forAccessories   = !$excluded && isset($flags['for_accessories']);
+        $forPunchingTools = !$excluded && isset($flags['for_punching_tools']);
+        $forBendingTools  = !$excluded && isset($flags['for_bending_tools']);
+        $label            = htmlspecialchars(strip_tags($flags['label'] ?? $code));
 
-        upsertFamilyConfig($code, $label, $forProducts, $forAutomation, $forAccessories, $excluded);
+        upsertFamilyConfig($code, $label, $forProducts, $forAutomation, $forAccessories,
+                           $forPunchingTools, $forBendingTools, $excluded);
     }
 
     $message = 'PIM-Familien-Konfiguration wurde gespeichert.';
@@ -45,12 +48,14 @@ foreach ($akFamilies as $fam) {
     ];
 
     $mergedFamilies[] = [
-        'code'            => $code,
-        'label'           => $label,
-        'for_products'    => (bool)($cfg['for_products']    ?? 0),
-        'for_automation'  => (bool)($cfg['for_automation']  ?? 0),
-        'for_accessories' => (bool)($cfg['for_accessories'] ?? 0),
-        'excluded'        => (bool)($cfg['excluded']        ?? 0),
+        'code'              => $code,
+        'label'             => $label,
+        'for_products'      => (bool)($cfg['for_products']      ?? 0),
+        'for_automation'    => (bool)($cfg['for_automation']    ?? 0),
+        'for_accessories'   => (bool)($cfg['for_accessories']   ?? 0),
+        'for_punching_tools'=> (bool)($cfg['for_punching_tools']?? 0),
+        'for_bending_tools' => (bool)($cfg['for_bending_tools'] ?? 0),
+        'excluded'          => (bool)($cfg['excluded']          ?? 0),
     ];
 }
 
@@ -243,9 +248,11 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
 
     <p class="hint">
         Lege fest, unter welchem Tab jede PIM-Familie auf der Startseite erscheint:<br>
-        <strong>Maschinen</strong> = "Produkt wählen"-Tab &nbsp;|&nbsp;
-        <strong>Automation</strong> = Automation-Tab &nbsp;|&nbsp;
-        <strong>Zubehör</strong> = Zubehör-Tab.<br>
+        <strong>Maschinen</strong> &nbsp;|&nbsp;
+        <strong>Automation</strong> &nbsp;|&nbsp;
+        <strong>Zubehör</strong> &nbsp;|&nbsp;
+        <strong>Stanzwerkzeuge</strong> &nbsp;|&nbsp;
+        <strong>Abkantwerkzeuge</strong>.<br>
         Mit <strong>Nicht laden</strong> wird die Familie komplett ausgeblendet (schnellere Ladezeiten).
         Solange keine Zuweisung gespeichert ist, werden alle Familien in allen Tabs angezeigt.
     </p>
@@ -264,6 +271,8 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
                         <th class="center">Maschinen</th>
                         <th class="center">Automation</th>
                         <th class="center">Zubehör</th>
+                        <th class="center">Stanzwerkzeuge</th>
+                        <th class="center">Abkantwerkzeuge</th>
                         <th class="center">Nicht laden</th>
                     </tr>
                 </thead>
@@ -289,8 +298,20 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
                         </td>
                         <td class="center">
                             <input type="checkbox" name="families[<?php echo $code; ?>][for_accessories]"
-                                   <?php echo $fam['for_accessories'] ? 'checked' : ''; ?>
-                                   <?php echo $fam['excluded']        ? 'disabled' : ''; ?>
+                                   <?php echo $fam['for_accessories']   ? 'checked' : ''; ?>
+                                   <?php echo $fam['excluded']          ? 'disabled' : ''; ?>
+                                   onchange="syncRow(this)">
+                        </td>
+                        <td class="center">
+                            <input type="checkbox" name="families[<?php echo $code; ?>][for_punching_tools]"
+                                   <?php echo $fam['for_punching_tools'] ? 'checked' : ''; ?>
+                                   <?php echo $fam['excluded']           ? 'disabled' : ''; ?>
+                                   onchange="syncRow(this)">
+                        </td>
+                        <td class="center">
+                            <input type="checkbox" name="families[<?php echo $code; ?>][for_bending_tools]"
+                                   <?php echo $fam['for_bending_tools']  ? 'checked' : ''; ?>
+                                   <?php echo $fam['excluded']           ? 'disabled' : ''; ?>
                                    onchange="syncRow(this)">
                         </td>
                         <td class="center">

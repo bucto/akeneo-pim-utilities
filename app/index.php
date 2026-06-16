@@ -3,7 +3,7 @@ include('api_helper.php');
 include('db_helper.php');
 
 // --- Zustand bestimmen ---
-$activeTab     = in_array($_GET['tab'] ?? '', ['automation', 'accessories']) ? $_GET['tab'] : 'products';
+$activeTab     = in_array($_GET['tab'] ?? '', ['automation', 'accessories', 'punching_tools', 'bending_tools']) ? $_GET['tab'] : 'products';
 $selectedFamily = $_GET['family'] ?? null;
 $filterStatus   = in_array($_GET['status'] ?? '', ['active', 'disabled', 'all']) ? $_GET['status'] : 'active';
 
@@ -43,9 +43,11 @@ function tabUrl(string $tab, ?string $family = null, string $status = 'active'):
 }
 
 $tabs = [
-    'products'    => 'Maschinen',
-    'automation'  => 'Automation',
-    'accessories' => 'Zubehör',
+    'products'       => 'Maschinen',
+    'automation'     => 'Automation',
+    'accessories'    => 'Zubehör',
+    'punching_tools' => 'Stanzwerkzeuge',
+    'bending_tools'  => 'Abkantwerkzeuge',
 ];
 ?>
 <!DOCTYPE html>

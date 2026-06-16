@@ -39,7 +39,8 @@ function hasAnyFamilyConfig(): bool {
         $stmt = $pdo->query(
             "SELECT 1 FROM pim_family_config
              WHERE excluded = 0
-               AND (for_products = 1 OR for_automation = 1 OR for_accessories = 1)
+               AND (for_products = 1 OR for_automation = 1 OR for_accessories = 1
+                    OR for_punching_tools = 1 OR for_bending_tools = 1)
              LIMIT 1"
         );
         return (bool) $stmt->fetchColumn();
@@ -49,10 +50,9 @@ function hasAnyFamilyConfig(): bool {
 }
 
 /**
- * Lädt alle konfigurierten Familien für einen Kontext (products|automation|accessories).
- * Gibt null zurück wenn keine DB-Verbindung möglich.
+ * Lädt alle konfigurierten Familien für einen Kontext.
  *
- * @param string $context  'products' | 'automation' | 'accessories'
+ * @param string $context  'products' | 'automation' | 'accessories' | 'punching_tools' | 'bending_tools'
  * @return array|null  Array von ['family_code'=>..., 'label'=>...] oder null
  */
 function getConfiguredFamiliesForContext(string $context): ?array {
@@ -60,9 +60,11 @@ function getConfiguredFamiliesForContext(string $context): ?array {
     if (!$pdo) return null;
 
     $column = match($context) {
-        'automation'  => 'for_automation',
-        'accessories' => 'for_accessories',
-        default       => 'for_products',
+        'automation'     => 'for_automation',
+        'accessories'    => 'for_accessories',
+        'punching_tools' => 'for_punching_tools',
+        'bending_tools'  => 'for_bending_tools',
+        default          => 'for_products',
     };
 
     try {
@@ -86,7 +88,10 @@ function getAllFamilyConfig(): array {
 
     try {
         $stmt = $pdo->query(
-            "SELECT family_code, label, for_products, for_automation, for_accessories, excluded
+            "SELECT family_code, label,
+                    for_products, for_automation, for_accessories,
+                    for_punching_tools, for_bending_tools,
+                    excluded
              FROM pim_family_config
              ORDER BY label, family_code"
         );
@@ -105,6 +110,8 @@ function upsertFamilyConfig(
     bool $forProducts,
     bool $forAutomation,
     bool $forAccessories,
+    bool $forPunchingTools,
+    bool $forBendingTools,
     bool $excluded
 ): void {
     $pdo = getDbConnection();
@@ -113,23 +120,28 @@ function upsertFamilyConfig(
     try {
         $stmt = $pdo->prepare(
             "INSERT INTO pim_family_config
-                (family_code, label, for_products, for_automation, for_accessories, excluded)
+                (family_code, label, for_products, for_automation, for_accessories,
+                 for_punching_tools, for_bending_tools, excluded)
              VALUES
-                (:code, :label, :fp, :fa, :fac, :ex)
+                (:code, :label, :fp, :fa, :fac, :fpt, :fbt, :ex)
              ON DUPLICATE KEY UPDATE
-                label           = VALUES(label),
-                for_products    = VALUES(for_products),
-                for_automation  = VALUES(for_automation),
-                for_accessories = VALUES(for_accessories),
-                excluded        = VALUES(excluded)"
+                label              = VALUES(label),
+                for_products       = VALUES(for_products),
+                for_automation     = VALUES(for_automation),
+                for_accessories    = VALUES(for_accessories),
+                for_punching_tools = VALUES(for_punching_tools),
+                for_bending_tools  = VALUES(for_bending_tools),
+                excluded           = VALUES(excluded)"
         );
         $stmt->execute([
             ':code'  => $code,
             ':label' => $label,
-            ':fp'    => $forProducts    ? 1 : 0,
-            ':fa'    => $forAutomation  ? 1 : 0,
-            ':fac'   => $forAccessories ? 1 : 0,
-            ':ex'    => $excluded       ? 1 : 0,
+            ':fp'    => $forProducts      ? 1 : 0,
+            ':fa'    => $forAutomation    ? 1 : 0,
+            ':fac'   => $forAccessories   ? 1 : 0,
+            ':fpt'   => $forPunchingTools ? 1 : 0,
+            ':fbt'   => $forBendingTools  ? 1 : 0,
+            ':ex'    => $excluded         ? 1 : 0,
         ]);
     } catch (PDOException $e) {
         // Fehler stillschweigend ignorieren, Seite bleibt funktionsfähig
