@@ -1,34 +1,73 @@
 <?php
 include('api_helper.php');
 
-// --- Alle bendingtool_* Familien aus Akeneo ---
-$allFamilies    = getAkeneoFamilies();
-$bendingFamilies = array_values(array_filter(
-    $allFamilies,
-    fn($f) => str_starts_with($f['code'], 'bendingtool_')
-));
+// --- Cache-Datei ---
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_cache.json';
+$cacheTtlSec = 1800; // 30 Minuten
+$forceReload = isset($_GET['reload']);
 
-// --- Produkte aller Familien laden ---
-$rows = [];
-foreach ($bendingFamilies as $family) {
-    $result      = getAkeneoProductsByFamily($family['code']);
-    $familyLabel = $family['labels']['de_DE'] ?? $family['code'];
+function loadBendingToolData(): array {
+    // Familien mit Präfix bendingtool_
+    $allFamilies    = getAkeneoFamilies();
+    $bendingFamilies = array_values(array_filter(
+        $allFamilies,
+        fn($f) => str_starts_with($f['code'], 'bendingtool_')
+    ));
 
-    foreach (array_merge($result['active'], $result['disabled']) as $product) {
+    if (empty($bendingFamilies)) return [];
+
+    // Nur die benötigten Attribute laden (massiv kleinere API-Antworten)
+    $imageAttrs   = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
+    $filterAttrs  = ['bendingtool_die_1v_size', 'bendingtool_die_1v_angle'];
+    $onlyAttrs    = array_unique(array_merge($filterAttrs, $imageAttrs));
+
+    // Alle Familien in EINEM einzigen paginierten API-Call
+    $familyCodes = array_column($bendingFamilies, 'code');
+    $familyLabels = array_column($bendingFamilies, 'labels', 'code');
+    $products    = getAkeneoProductsByFamilies($familyCodes, $onlyAttrs);
+
+    $rows = [];
+    foreach ($products as $product) {
+        $fc   = $product['family'] ?? '';
         $rows[] = [
-            'identifier'   => $product['identifier'],
-            'familyCode'   => $family['code'],
-            'familyLabel'  => $familyLabel,
-            'enabled'      => $product['enabled'] ?? true,
-            'imageUrl'     => $product['_imageUrl'] ?? null,
-            'size'         => extractAttrValue($product, 'bendingtool_die_1v_size'),
-            'angle'        => extractAttrValue($product, 'bendingtool_die_1v_angle'),
+            'identifier'  => $product['identifier'],
+            'familyCode'  => $fc,
+            'familyLabel' => $familyLabels[$fc]['de_DE'] ?? $fc,
+            'enabled'     => $product['enabled'] ?? true,
+            'imageUrl'    => $product['_imageUrl'] ?? null,
+            'size'        => extractAttrValue($product, 'bendingtool_die_1v_size'),
+            'angle'       => extractAttrValue($product, 'bendingtool_die_1v_angle'),
         ];
+    }
+
+    usort($rows, fn($a, $b) => strcasecmp($a['identifier'], $b['identifier']));
+    return $rows;
+}
+
+// Cache lesen oder neu laden
+$cacheAge  = null;
+$cacheTime = null;
+if (!$forceReload && file_exists($cacheFile)) {
+    $age = time() - filemtime($cacheFile);
+    if ($age < $cacheTtlSec) {
+        $rows      = json_decode(file_get_contents($cacheFile), true) ?? [];
+        $cacheAge  = $age;
+        $cacheTime = filemtime($cacheFile);
     }
 }
 
-// Alphabetisch nach Artikelnummer sortieren
-usort($rows, fn($a, $b) => strcasecmp($a['identifier'], $b['identifier']));
+if (!isset($rows)) {
+    $rows = loadBendingToolData();
+    file_put_contents($cacheFile, json_encode($rows));
+    $cacheTime = time();
+    $cacheAge  = 0;
+}
+
+// Wenn nach reload weitergeleitet wird, damit F5 nicht neu lädt
+if ($forceReload) {
+    header('Location: bendingtool_finder.php');
+    exit;
+}
 
 // --- Eindeutige Filterwerte (numerisch sortiert) ---
 $uniqueSizes = array_values(array_unique(array_filter(
@@ -257,7 +296,18 @@ foreach ($rows as $r) {
 
 <div class="page-head">
     <h1>Abkant-Werkzeug-Finder</h1>
-    <a href="index.php" class="back-link">← Zurück zur Übersicht</a>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <?php if ($cacheTime): ?>
+        <span style="font-size:12px;color:#718096;">
+            Daten vom <?php echo date('d.m.Y H:i', $cacheTime); ?> Uhr
+            <?php if ($cacheAge !== null && $cacheAge > 0): ?>
+                (vor <?php echo round($cacheAge / 60); ?> Min.)
+            <?php endif; ?>
+        </span>
+        <?php endif; ?>
+        <a href="bendingtool_finder.php?reload=1" class="back-link" title="Daten direkt aus dem PIM neu laden">↺ Neu laden</a>
+        <a href="index.php" class="back-link">← Zurück</a>
+    </div>
 </div>
 
 <!-- Filter-Leiste -->

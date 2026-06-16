@@ -194,6 +194,48 @@ function getAkeneoFamilies(): array {
 }
 
 /**
+ * Holt Produkte aus MEHREREN Familien in einem einzigen paginierten API-Call.
+ * Lädt optional nur die angegebenen Attribute (drastisch kürzere Antworten).
+ *
+ * @param  array  $familyCodes    Familie-Codes
+ * @param  array  $onlyAttrs      Wenn nicht leer: nur diese Attribut-Codes zurückgeben
+ * @return array  Alle Produkte (flach, mit _imageUrl)
+ */
+function getAkeneoProductsByFamilies(array $familyCodes, array $onlyAttrs = []): array {
+    if (empty($familyCodes)) return [];
+
+    $accessToken  = getAccessToken();
+    $allProducts  = [];
+    $page         = 1;
+    $limit        = 100;
+    $searchParams = ['family' => [['operator' => 'IN', 'value' => $familyCodes]]];
+    $searchQuery  = urlencode(json_encode($searchParams));
+    $attrsParam   = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
+
+    while (true) {
+        $url      = API_BASE_URL . "/products?search={$searchQuery}&page={$page}&limit={$limit}{$attrsParam}";
+        $response = apiGet($url, $accessToken);
+
+        if ($response === null || isset($response['code'])) break;
+
+        $items = $response['_embedded']['items'] ?? [];
+        if (empty($items)) break;
+
+        foreach ($items as &$product) {
+            $product['_imageUrl'] = extractProductImageUrl($product);
+        }
+        unset($product);
+
+        $allProducts = array_merge($allProducts, $items);
+
+        if (!isset($response['_links']['next']) || count($items) < $limit) break;
+        $page++;
+    }
+
+    return $allProducts;
+}
+
+/**
  * Holt Produkte basierend auf einer Produktfamilie, trennt sie nach Status
  * und ergänzt jeweils die erste Bild-URL.
  */
