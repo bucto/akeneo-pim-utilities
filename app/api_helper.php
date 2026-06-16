@@ -284,6 +284,47 @@ function getAkeneoProductModelsByFamilies(array $familyCodes, array $onlyAttrs =
 }
 
 /**
+ * Einzelnes Produktmodell per Code laden.
+ */
+function getAkeneoProductModel(string $code, array $onlyAttrs = []): ?array {
+    $accessToken = getAccessToken();
+    $attrsParam  = empty($onlyAttrs) ? '' : ('?attributes=' . urlencode(implode(',', $onlyAttrs)));
+    $model       = apiGet(API_BASE_URL . '/product-models/' . urlencode($code) . $attrsParam, $accessToken);
+
+    if (!$model || !isset($model['code'])) {
+        return null;
+    }
+
+    $model['_imageUrl'] = extractProductImageUrl($model);
+    return $model;
+}
+
+/**
+ * Blatt-Modelle: Einträge die selbst kein Parent anderer Modelle sind.
+ * Bei 2-stufiger Varianten-Hierarchie sind das die eigentlichen Werkzeugmodelle.
+ */
+function filterLeafProductModels(array $models): array {
+    if (count($models) <= 1) {
+        return $models;
+    }
+
+    $usedAsParent = [];
+    foreach ($models as $model) {
+        $parent = $model['parent'] ?? null;
+        if ($parent) {
+            $usedAsParent[$parent] = true;
+        }
+    }
+
+    $leaves = array_values(array_filter(
+        $models,
+        fn($m) => !isset($usedAsParent[$m['code']])
+    ));
+
+    return !empty($leaves) ? $leaves : $models;
+}
+
+/**
  * Deutsche Produktbezeichnung aus values extrahieren.
  */
 function extractProductName(array $entity, string $locale = 'de_DE'): ?string {

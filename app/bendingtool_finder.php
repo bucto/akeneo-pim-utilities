@@ -1,20 +1,65 @@
 <?php
 include('api_helper.php');
+include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_models_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v2_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
+$loadDebug   = [];
 
-function loadBendingToolData(): array {
+/**
+ * Familien für den Werkzeugfinder: DB-Tab „Abkantwerkzeuge“ oder Fallback bendingtool_*
+ */
+function getBendingToolFamilies(): array {
     $allFamilies = getAkeneoFamilies();
-    $bendingFamilies = array_values(array_filter(
+
+    if (hasAnyFamilyConfig()) {
+        $configured = getConfiguredFamiliesForContext('bending_tools') ?? [];
+        if (!empty($configured)) {
+            $allowed = array_column($configured, 'family_code');
+            return array_values(array_filter(
+                $allFamilies,
+                fn($f) => in_array($f['code'], $allowed, true)
+            ));
+        }
+    }
+
+    return array_values(array_filter(
         $allFamilies,
         fn($f) => str_starts_with($f['code'], 'bendingtool_')
     ));
+}
 
-    if (empty($bendingFamilies)) return [];
+function modelToRow(array $model, array $familyLabels): array {
+    $fc   = $model['family'] ?? '';
+    $code = $model['code'] ?? '';
+
+    return [
+        'code'        => $code,
+        'name'        => extractProductName($model) ?? $code,
+        'familyCode'  => $fc,
+        'familyLabel' => $familyLabels[$fc] ?? $fc,
+        'imageUrl'    => $model['_imageUrl'] ?? null,
+        'size'        => extractAttrValue($model, 'bendingtool_die_1v_size'),
+        'angle'       => extractAttrValue($model, 'bendingtool_die_1v_angle'),
+    ];
+}
+
+function loadBendingToolData(): array {
+    global $loadDebug;
+
+    $bendingFamilies = getBendingToolFamilies();
+    $loadDebug['families'] = array_map(
+        fn($f) => ($f['labels']['de_DE'] ?? $f['code']) . ' (' . $f['code'] . ')',
+        $bendingFamilies
+    );
+
+    if (empty($bendingFamilies)) {
+        $loadDebug['message'] = 'Keine passenden Familien gefunden (DB-Tab Abkantwerkzeuge oder Präfix bendingtool_).';
+        return [];
+    }
 
     $imageAttrs  = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
     $filterAttrs = ['bendingtool_die_1v_size', 'bendingtool_die_1v_angle', 'product_name'];
@@ -26,27 +71,59 @@ function loadBendingToolData(): array {
         $familyLabels[$f['code']] = $f['labels']['de_DE'] ?? $f['code'];
     }
 
-    // Nur Root-Produktmodelle (Varianten = einzelne Werkzeuglängen werden ausgelassen)
-    $models = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, true);
+    // 1) Alle Produktmodelle der Familien (ohne Parent-Filter)
+    $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
+    $loadDebug['product_models_total'] = count($allModels);
 
-    $rows = [];
-    foreach ($models as $model) {
-        $fc    = $model['family'] ?? '';
-        $code  = $model['code'] ?? '';
-        $name  = extractProductName($model) ?? $code;
+    $models = filterLeafProductModels($allModels);
+    $loadDebug['product_models_leaf'] = count($models);
+    $loadDebug['source'] = 'product-models';
 
-        $rows[] = [
-            'code'        => $code,
-            'name'        => $name,
-            'familyCode'  => $fc,
-            'familyLabel' => $familyLabels[$fc] ?? $fc,
-            'imageUrl'    => $model['_imageUrl'] ?? null,
-            'size'        => extractAttrValue($model, 'bendingtool_die_1v_size'),
-            'angle'       => extractAttrValue($model, 'bendingtool_die_1v_angle'),
-        ];
+    // 2) Fallback: Root-Modelle, falls Blatt-Filter nichts liefert
+    if (empty($models)) {
+        $models = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, true);
+        $loadDebug['product_models_root'] = count($models);
+        if (!empty($models)) {
+            $loadDebug['source'] = 'product-models-root';
+        }
     }
 
+    // 3) Fallback: Parent-Codes aus Varianten-Produkten → Modell laden
+    if (empty($models)) {
+        $products = getAkeneoProductsByFamilies($familyCodes, $onlyAttrs);
+        $loadDebug['products_total'] = count($products);
+
+        $parentCodes = [];
+        foreach ($products as $product) {
+            $parent = $product['parent'] ?? null;
+            if ($parent && !isset($parentCodes[$parent])) {
+                $parentCodes[$parent] = true;
+            }
+        }
+
+        $loadDebug['unique_parents'] = count($parentCodes);
+        $models = [];
+
+        foreach (array_keys($parentCodes) as $parentCode) {
+            $model = getAkeneoProductModel($parentCode, $onlyAttrs);
+            if ($model) {
+                $models[] = $model;
+            }
+        }
+
+        if (!empty($models)) {
+            $loadDebug['source'] = 'products-by-parent';
+        }
+    }
+
+    if (empty($models)) {
+        $loadDebug['message'] = 'Keine Produktmodelle gefunden. Prüfen Sie Familien-Zuweisung und PIM-Struktur.';
+        return [];
+    }
+
+    $rows = array_map(fn($m) => modelToRow($m, $familyLabels), $models);
     usort($rows, fn($a, $b) => strcasecmp($a['name'], $b['name']));
+
     return $rows;
 }
 
@@ -302,6 +379,17 @@ foreach ($rows as $r) {
             font-style: italic;
             font-size: 15px;
         }
+        .debug-box {
+            max-width: 1400px;
+            margin: 0 auto 16px;
+            padding: 14px 16px;
+            background: #fffbeb;
+            border: 1px solid #f6e05e;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #744210;
+        }
+        .debug-box code { font-size: 12px; }
     </style>
 </head>
 <body>
@@ -327,6 +415,28 @@ foreach ($rows as $r) {
     Es werden nur <strong>Produktmodelle</strong> angezeigt — nicht die einzelnen Varianten mit unterschiedlichen Werkzeuglängen oder Radien.
     So finden Sie schneller das passende Werkzeugmodell; die konkrete Länge wählen Sie anschließend im PIM oder Katalog.
 </p>
+
+<?php if (empty($rows) && isAdminEnabled() && !empty($loadDebug)): ?>
+<div class="debug-box">
+    <strong>Admin-Diagnose:</strong>
+    <?php if (!empty($loadDebug['message'])): ?>
+        <?php echo htmlspecialchars($loadDebug['message']); ?><br>
+    <?php endif; ?>
+    Familien: <?php echo count($loadDebug['families'] ?? []); ?>
+    <?php if (!empty($loadDebug['families'])): ?>
+        — <code><?php echo htmlspecialchars(implode(', ', $loadDebug['families'])); ?></code>
+    <?php endif; ?>
+    <br>
+    Produktmodelle gesamt: <?php echo (int)($loadDebug['product_models_total'] ?? 0); ?>,
+    Blatt-Modelle: <?php echo (int)($loadDebug['product_models_leaf'] ?? 0); ?>,
+    Root-Modelle: <?php echo (int)($loadDebug['product_models_root'] ?? 0); ?>,
+    Produkte: <?php echo (int)($loadDebug['products_total'] ?? 0); ?>,
+    Parent-Codes: <?php echo (int)($loadDebug['unique_parents'] ?? 0); ?>
+    <?php if (!empty($loadDebug['source'])): ?>
+        <br>Quelle: <code><?php echo htmlspecialchars($loadDebug['source']); ?></code>
+    <?php endif; ?>
+</div>
+<?php endif; ?>
 
 <!-- Filter-Leiste -->
 <div class="filter-bar">
@@ -375,7 +485,10 @@ foreach ($rows as $r) {
         <tbody>
         <?php if (empty($rows)): ?>
             <tr><td colspan="5" class="no-results">
-                Keine Produktmodelle aus Familien mit Präfix <code>bendingtool_</code> gefunden.
+                Keine Werkzeugmodelle gefunden.<br>
+                Familien müssen im Admin unter <strong>Abkantwerkzeuge</strong> zugewiesen sein
+                (oder Code beginnt mit <code>bendingtool_</code>).<br>
+                Bitte <a href="bendingtool_finder.php?reload=1">Neu laden</a> nach Konfiguration.
             </td></tr>
         <?php else: ?>
             <?php foreach ($rows as $row): ?>
