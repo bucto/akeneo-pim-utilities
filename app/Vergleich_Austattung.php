@@ -266,5 +266,8 @@
     }
     ?>
     </div>
+
+<?php renderSiteFooter(); ?>
+
 </body>
 </html>

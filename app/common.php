@@ -3,6 +3,52 @@
 /** Logo-Pfad relativ zum Webroot */
 define('AMADA_LOGO_PATH', 'assets/amada-logo.svg');
 
+/** Footer-Metadaten (über .env überschreibbar) */
+define('APP_AUTHOR', getenv('APP_AUTHOR') ?: 'Thomas Bücken');
+define('APP_REPO',   getenv('APP_REPO')   ?: 'https://github.com/bucto/akeneo-pim-utilities');
+
+/**
+ * Git-Revisionsnummer: APP_REVISION → REVISION-Datei → git (Entwicklung) → dev
+ */
+function getAppRevision(): string {
+    static $revision = null;
+    if ($revision !== null) {
+        return $revision;
+    }
+
+    $fromEnv = getenv('APP_REVISION');
+    if (is_string($fromEnv) && $fromEnv !== '') {
+        return $revision = $fromEnv;
+    }
+
+    $revFile = __DIR__ . '/REVISION';
+    if (is_readable($revFile)) {
+        $fromFile = trim((string)file_get_contents($revFile));
+        if ($fromFile !== '') {
+            return $revision = $fromFile;
+        }
+    }
+
+    $repoRoot = dirname(__DIR__);
+    if (is_dir($repoRoot . '/.git')) {
+        $hash = @shell_exec('git -C ' . escapeshellarg($repoRoot) . ' rev-parse --short HEAD 2>/dev/null');
+        if (is_string($hash)) {
+            $hash = trim($hash);
+            if ($hash !== '') {
+                return $revision = $hash;
+            }
+        }
+    }
+
+    return $revision = 'dev';
+}
+
+/** Anzeigename des Repository-Links ohne Schema und .git-Suffix */
+function getAppRepoLabel(): string {
+    $repo = preg_replace('#^https?://#', '', APP_REPO);
+    return preg_replace('#\.git$#', '', rtrim($repo, '/'));
+}
+
 /** Admin-Bereich nur wenn ADMIN_ENABLED=true gesetzt ist */
 function isAdminEnabled(): bool {
     return filter_var(getenv('ADMIN_ENABLED') ?: 'false', FILTER_VALIDATE_BOOLEAN);
@@ -93,6 +139,30 @@ function renderBaseStyles(): void {
             max-width: 1400px;
             margin: 0 auto;
         }
+        .site-footer {
+            max-width: 1400px;
+            margin: 28px auto 0;
+            padding-top: 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 12px;
+            color: #718096;
+        }
+        .site-footer a {
+            color: #4a5568;
+            text-decoration: none;
+        }
+        .site-footer a:hover {
+            text-decoration: underline;
+            color: var(--dark-gray);
+        }
+        .site-footer .sep {
+            color: #cbd5e0;
+        }
     </style>
     <?php
 }
@@ -124,5 +194,22 @@ function renderSiteHeader(?string $active = null): void {
             <?php endif; ?>
         </nav>
     </header>
+    <?php
+}
+
+/**
+ * Seitenfuß mit Revisionsnummer, Autor und Repository-Link.
+ */
+function renderSiteFooter(): void {
+    ?>
+    <footer class="site-footer">
+        <span>Rev. <?php echo htmlspecialchars(getAppRevision()); ?></span>
+        <span class="sep">·</span>
+        <span><?php echo htmlspecialchars(APP_AUTHOR); ?></span>
+        <span class="sep">·</span>
+        <a href="<?php echo htmlspecialchars(APP_REPO); ?>" target="_blank" rel="noopener noreferrer">
+            <?php echo htmlspecialchars(getAppRepoLabel()); ?>
+        </a>
+    </footer>
     <?php
 }

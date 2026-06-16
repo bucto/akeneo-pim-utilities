@@ -27,3 +27,9 @@ define('PIM_IMAGE_ATTRS',    getenv('PIM_IMAGE_ATTRS')    ?: 'picture,filename_p
 // --- PIM KANAL & LOCALE (wie amada-exponate) ---
 define('PIM_LOCALE',  getenv('PIM_LOCALE')  ?: 'de_DE');
 define('PIM_CHANNEL', getenv('PIM_CHANNEL') ?: 'ecommerce');
+
+// --- Abkantwerkzeug-Attribute (kommagetrennte Fallback-Kette) ---
+define('PIM_BENDING_HEIGHT_ATTRS', getenv('PIM_BENDING_HEIGHT_ATTRS') ?: 'bendingtool_tool_height,bendingtool_die_height,bendingtool_height');
+define('PIM_BENDING_RADIUS_ATTRS', getenv('PIM_BENDING_RADIUS_ATTRS') ?: 'bendingtool_die_radius,bendingtool_radius,bendingtool_die_1v_radius');
+define('PIM_BENDING_SERIES_ATTRS', getenv('PIM_BENDING_SERIES_ATTRS') ?: 'series,bendingtool_series');
+define('PIM_BENDING_LENGTH_ATTRS', getenv('PIM_BENDING_LENGTH_ATTRS') ?: 'bendingtool_tool_length,bendingtool_length,bendingtool_die_length');

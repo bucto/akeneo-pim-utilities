@@ -251,5 +251,8 @@
     echo '</table>';
     ?>
     </div>
+
+<?php renderSiteFooter(); ?>
+
 </body>
 </html>

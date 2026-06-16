@@ -4,7 +4,7 @@ include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v3_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v4_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 $loadDebug   = [];
@@ -32,7 +32,48 @@ function getBendingToolFamilies(): array {
     ));
 }
 
-function modelToRow(array $model, array $familyLabels): array {
+function modelStatusFromVariants(array $variants): array {
+    if (empty($variants)) {
+        return ['display' => '–', 'raw' => ''];
+    }
+
+    $active = 0;
+    foreach ($variants as $variant) {
+        if (($variant['enabled'] ?? true) !== false) {
+            $active++;
+        }
+    }
+
+    $total = count($variants);
+    if ($active === $total) {
+        return ['display' => 'Aktiv', 'raw' => 'active'];
+    }
+    if ($active === 0) {
+        return ['display' => 'Inaktiv', 'raw' => 'disabled'];
+    }
+
+    return [
+        'display' => $active . '/' . $total . ' aktiv',
+        'raw'     => 'partial',
+    ];
+}
+
+function buildVariantIndex(array $familyCodes): array {
+    $products = getAkeneoProductsByFamilies($familyCodes, []);
+    $index    = [];
+
+    foreach ($products as $product) {
+        $parent = $product['parent'] ?? null;
+        if (!$parent) {
+            continue;
+        }
+        $index[$parent][] = $product;
+    }
+
+    return $index;
+}
+
+function modelToRow(array $model, array $familyLabels, array $variants = []): array {
     $fc   = $model['family'] ?? '';
     $code = $model['code'] ?? '';
 
@@ -44,6 +85,11 @@ function modelToRow(array $model, array $familyLabels): array {
         'imageUrl'    => $model['_imageUrl'] ?? null,
         'size'        => extractAttrValue($model, 'bendingtool_die_1v_size'),
         'angle'       => extractAttrValue($model, 'bendingtool_die_1v_angle'),
+        'height'      => extractAttrValueFirst($model, PIM_BENDING_HEIGHT_ATTRS),
+        'radius'      => extractAttrValueFirst($model, PIM_BENDING_RADIUS_ATTRS),
+        'series'      => extractAttrValueFirst($model, PIM_BENDING_SERIES_ATTRS),
+        'status'      => modelStatusFromVariants($variants),
+        'variantCount'=> count($variants),
     ];
 }
 
@@ -62,8 +108,17 @@ function loadBendingToolData(): array {
     }
 
     $imageAttrs  = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
-    $filterAttrs = ['bendingtool_die_1v_size', 'bendingtool_die_1v_angle', 'product_name'];
-    $onlyAttrs   = array_unique(array_merge($filterAttrs, $imageAttrs));
+    $filterAttrs = [
+        'bendingtool_die_1v_size',
+        'bendingtool_die_1v_angle',
+        'product_name',
+    ];
+    $extraAttrs = array_merge(
+        array_map('trim', explode(',', PIM_BENDING_HEIGHT_ATTRS)),
+        array_map('trim', explode(',', PIM_BENDING_RADIUS_ATTRS)),
+        array_map('trim', explode(',', PIM_BENDING_SERIES_ATTRS))
+    );
+    $onlyAttrs = array_values(array_unique(array_merge($filterAttrs, $extraAttrs, $imageAttrs)));
 
     $familyCodes  = array_column($bendingFamilies, 'code');
     $familyLabels = [];
@@ -131,7 +186,13 @@ function loadBendingToolData(): array {
         return [];
     }
 
-    $rows = array_map(fn($m) => modelToRow($m, $familyLabels), $models);
+    $variantIndex = buildVariantIndex($familyCodes);
+    $loadDebug['variants_total'] = array_sum(array_map('count', $variantIndex));
+
+    $rows = array_map(
+        fn($m) => modelToRow($m, $familyLabels, $variantIndex[$m['code'] ?? ''] ?? []),
+        $models
+    );
     usort($rows, fn($a, $b) => strcasecmp($a['name'], $b['name']));
 
     return $rows;
@@ -162,25 +223,52 @@ if ($forceReload) {
     exit;
 }
 
-// --- Eindeutige Filterwerte (numerisch sortiert) ---
-$uniqueSizes = array_values(array_unique(array_filter(
-    array_map(fn($r) => $r['size']['raw'], $rows),
-    fn($v) => $v !== null
-)));
-$uniqueAngles = array_values(array_unique(array_filter(
-    array_map(fn($r) => $r['angle']['raw'], $rows),
-    fn($v) => $v !== null
-)));
-sort($uniqueSizes,  SORT_NUMERIC);
-sort($uniqueAngles, SORT_NUMERIC);
+// --- Eindeutige Filterwerte ---
+function collectUniqueFilterValues(array $rows, string $field, bool $numericSort = false): array {
+    $values = array_values(array_unique(array_filter(
+        array_map(fn($r) => $r[$field]['raw'] ?? null, $rows),
+        fn($v) => $v !== null && $v !== ''
+    )));
 
-// Anzeige-Labels für Filter (raw → display)
-$sizeLabels  = [];
-$angleLabels = [];
-foreach ($rows as $r) {
-    if ($r['size']['raw']  !== null) $sizeLabels[$r['size']['raw']]   = $r['size']['display'];
-    if ($r['angle']['raw'] !== null) $angleLabels[$r['angle']['raw']] = $r['angle']['display'];
+    if ($numericSort) {
+        sort($values, SORT_NUMERIC);
+    } else {
+        sort($values, SORT_NATURAL | SORT_FLAG_CASE);
+    }
+
+    $labels = [];
+    foreach ($rows as $row) {
+        $raw = $row[$field]['raw'] ?? null;
+        if ($raw !== null && $raw !== '') {
+            $labels[$raw] = $row[$field]['display'];
+        }
+    }
+
+    return ['values' => $values, 'labels' => $labels];
 }
+
+$sizeFilter   = collectUniqueFilterValues($rows, 'size', true);
+$angleFilter  = collectUniqueFilterValues($rows, 'angle', true);
+$heightFilter = collectUniqueFilterValues($rows, 'height', true);
+$radiusFilter = collectUniqueFilterValues($rows, 'radius', true);
+$seriesFilter = collectUniqueFilterValues($rows, 'series', false);
+$statusFilter = collectUniqueFilterValues($rows, 'status', false);
+
+$uniqueSizes   = $sizeFilter['values'];
+$uniqueAngles  = $angleFilter['values'];
+$uniqueHeights = $heightFilter['values'];
+$uniqueRadii   = $radiusFilter['values'];
+$uniqueSeries  = $seriesFilter['values'];
+$uniqueStatus  = $statusFilter['values'];
+
+$sizeLabels   = $sizeFilter['labels'];
+$angleLabels  = $angleFilter['labels'];
+$heightLabels = $heightFilter['labels'];
+$radiusLabels = $radiusFilter['labels'];
+$seriesLabels = $seriesFilter['labels'];
+$statusLabels = $statusFilter['labels'];
+
+$colCount = 9;
 ?>
 <!DOCTYPE html>
 <html lang="de">
@@ -249,7 +337,7 @@ foreach ($rows as $r) {
             border: 1px solid var(--border);
             border-radius: 5px;
             font-size: 14px;
-            min-width: 160px;
+            min-width: 130px;
             background: #fff;
             outline: none;
         }
@@ -290,7 +378,7 @@ foreach ($rows as $r) {
         table {
             width: 100%;
             border-collapse: collapse;
-            min-width: 700px;
+            min-width: 1100px;
         }
         thead th {
             background: var(--dark-gray);
@@ -310,9 +398,62 @@ foreach ($rows as $r) {
         thead th:not(.sorted-asc):not(.sorted-desc) .sort-icon::after { content: '⇅'; }
 
         tbody tr { transition: background 0.1s; }
-        tbody tr:hover { background: var(--hover-bg); }
+        tbody tr.model-row { cursor: pointer; }
+        tbody tr.model-row:hover { background: var(--hover-bg); }
+        tbody tr.model-row.expanded { background: #edf2f7; }
         tbody tr.hidden  { display: none; }
         tbody tr.disabled-row td { color: #a0aec0; }
+
+        tr.variant-row td {
+            padding: 0;
+            background: #f7fafc;
+            border-bottom: 2px solid #cbd5e0;
+        }
+        .variant-panel {
+            padding: 14px 18px 18px 72px;
+        }
+        .variant-panel h3 {
+            margin: 0 0 10px;
+            font-size: 13px;
+            font-weight: 600;
+            color: #4a5568;
+            text-transform: uppercase;
+            letter-spacing: 0.3px;
+        }
+        .variant-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 520px;
+        }
+        .variant-table th {
+            background: #e2e8f0;
+            color: #2d3748;
+            padding: 8px 12px;
+            text-align: left;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .variant-table td {
+            padding: 8px 12px;
+            border-bottom: 1px solid var(--border);
+            font-size: 13px;
+            background: #fff;
+        }
+        .variant-loading,
+        .variant-empty,
+        .variant-error {
+            font-size: 13px;
+            color: #718096;
+            font-style: italic;
+        }
+        .variant-error { color: #c53030; font-style: normal; }
+        .expand-hint {
+            display: block;
+            font-size: 11px;
+            color: #a0aec0;
+            margin-top: 2px;
+        }
+        .model-row.expanded .expand-hint { color: #4a5568; }
 
         td {
             padding: 9px 14px;
@@ -422,8 +563,8 @@ foreach ($rows as $r) {
 </div>
 
 <p class="page-hint">
-    Es werden nur <strong>Produktmodelle</strong> angezeigt — nicht die einzelnen Varianten mit unterschiedlichen Werkzeuglängen oder Radien.
-    So finden Sie schneller das passende Werkzeugmodell; die konkrete Länge wählen Sie anschließend im PIM oder Katalog.
+    Es werden <strong>Produktmodelle</strong> angezeigt — klicken Sie auf ein Modell, um alle zugehörigen Artikel
+    mit den jeweiligen Werkzeuglängen anzuzeigen. Filtern Sie nach V-Öffnung, Winkel, Werkzeughöhe, Radius, Status und Serie.
 </p>
 
 <?php if (empty($rows) && isAdminEnabled() && !empty($loadDebug)): ?>
@@ -441,7 +582,8 @@ foreach ($rows as $r) {
     Blatt-Modelle: <?php echo (int)($loadDebug['product_models_leaf'] ?? 0); ?>,
     Root-Modelle: <?php echo (int)($loadDebug['product_models_root'] ?? 0); ?>,
     Produkte: <?php echo (int)($loadDebug['products_total'] ?? 0); ?>,
-    Parent-Codes: <?php echo (int)($loadDebug['unique_parents'] ?? 0); ?>
+    Parent-Codes: <?php echo (int)($loadDebug['unique_parents'] ?? 0); ?>,
+    Varianten: <?php echo (int)($loadDebug['variants_total'] ?? 0); ?>
     <?php if (!empty($loadDebug['source'])): ?>
         <br>Quelle: <code><?php echo htmlspecialchars($loadDebug['source']); ?></code>
     <?php endif; ?>
@@ -459,23 +601,67 @@ foreach ($rows as $r) {
         <input type="search" id="filterSearch" placeholder="Name oder Modellcode …" oninput="applyFilters()">
     </div>
     <div class="filter-group">
-        <label>V-Öffnung (bendingtool_die_1v_size)</label>
+        <label>V-Öffnung</label>
         <select id="filterSize" onchange="applyFilters()">
             <option value="">Alle</option>
             <?php foreach ($uniqueSizes as $val): ?>
-                <option value="<?php echo htmlspecialchars($val); ?>">
-                    <?php echo htmlspecialchars($sizeLabels[$val] ?? $val); ?>
+                <option value="<?php echo htmlspecialchars((string)$val); ?>">
+                    <?php echo htmlspecialchars($sizeLabels[$val] ?? (string)$val); ?>
                 </option>
             <?php endforeach; ?>
         </select>
     </div>
     <div class="filter-group">
-        <label>Winkel (bendingtool_die_1v_angle)</label>
+        <label>Winkel</label>
         <select id="filterAngle" onchange="applyFilters()">
             <option value="">Alle</option>
             <?php foreach ($uniqueAngles as $val): ?>
-                <option value="<?php echo htmlspecialchars($val); ?>">
-                    <?php echo htmlspecialchars($angleLabels[$val] ?? $val); ?>
+                <option value="<?php echo htmlspecialchars((string)$val); ?>">
+                    <?php echo htmlspecialchars($angleLabels[$val] ?? (string)$val); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>Werkzeughöhe</label>
+        <select id="filterHeight" onchange="applyFilters()">
+            <option value="">Alle</option>
+            <?php foreach ($uniqueHeights as $val): ?>
+                <option value="<?php echo htmlspecialchars((string)$val); ?>">
+                    <?php echo htmlspecialchars($heightLabels[$val] ?? (string)$val); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>Radius</label>
+        <select id="filterRadius" onchange="applyFilters()">
+            <option value="">Alle</option>
+            <?php foreach ($uniqueRadii as $val): ?>
+                <option value="<?php echo htmlspecialchars((string)$val); ?>">
+                    <?php echo htmlspecialchars($radiusLabels[$val] ?? (string)$val); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>Status</label>
+        <select id="filterStatus" onchange="applyFilters()">
+            <option value="">Alle</option>
+            <?php foreach ($uniqueStatus as $val): ?>
+                <option value="<?php echo htmlspecialchars((string)$val); ?>">
+                    <?php echo htmlspecialchars($statusLabels[$val] ?? (string)$val); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="filter-group">
+        <label>Serie</label>
+        <select id="filterSeries" onchange="applyFilters()">
+            <option value="">Alle</option>
+            <?php foreach ($uniqueSeries as $val): ?>
+                <option value="<?php echo htmlspecialchars((string)$val); ?>">
+                    <?php echo htmlspecialchars($seriesLabels[$val] ?? (string)$val); ?>
                 </option>
             <?php endforeach; ?>
         </select>
@@ -494,11 +680,15 @@ foreach ($rows as $r) {
                 <th onclick="sortTable(2)" data-col="2">Familie <span class="sort-icon"></span></th>
                 <th onclick="sortTable(3)" data-col="3">V-Öffnung <span class="sort-icon"></span></th>
                 <th onclick="sortTable(4)" data-col="4">Winkel <span class="sort-icon"></span></th>
+                <th onclick="sortTable(5)" data-col="5">Werkzeughöhe <span class="sort-icon"></span></th>
+                <th onclick="sortTable(6)" data-col="6">Radius <span class="sort-icon"></span></th>
+                <th onclick="sortTable(7)" data-col="7">Status <span class="sort-icon"></span></th>
+                <th onclick="sortTable(8)" data-col="8">Serie <span class="sort-icon"></span></th>
             </tr>
         </thead>
         <tbody>
         <?php if (empty($rows)): ?>
-            <tr><td colspan="5" class="no-results">
+            <tr><td colspan="<?php echo $colCount; ?>" class="no-results">
                 Keine Werkzeugmodelle gefunden.<br>
                 Familien müssen im Admin unter <strong>Abkantwerkzeuge</strong> zugewiesen sein
                 (oder Code beginnt mit <code>bendingtool_</code>).<br>
@@ -506,11 +696,17 @@ foreach ($rows as $r) {
             </td></tr>
         <?php else: ?>
             <?php foreach ($rows as $row): ?>
-            <tr data-code="<?php echo strtolower(htmlspecialchars($row['code'])); ?>"
+            <tr class="model-row"
+                data-code="<?php echo strtolower(htmlspecialchars($row['code'])); ?>"
+                data-model="<?php echo htmlspecialchars($row['code']); ?>"
                 data-name="<?php echo strtolower(htmlspecialchars($row['name'])); ?>"
                 data-family="<?php echo strtolower(htmlspecialchars($row['familyLabel'])); ?>"
-                data-size="<?php echo htmlspecialchars($row['size']['raw'] ?? ''); ?>"
-                data-angle="<?php echo htmlspecialchars($row['angle']['raw'] ?? ''); ?>">
+                data-size="<?php echo htmlspecialchars((string)($row['size']['raw'] ?? '')); ?>"
+                data-angle="<?php echo htmlspecialchars((string)($row['angle']['raw'] ?? '')); ?>"
+                data-height="<?php echo htmlspecialchars((string)($row['height']['raw'] ?? '')); ?>"
+                data-radius="<?php echo htmlspecialchars((string)($row['radius']['raw'] ?? '')); ?>"
+                data-status="<?php echo htmlspecialchars((string)($row['status']['raw'] ?? '')); ?>"
+                data-series="<?php echo htmlspecialchars((string)($row['series']['raw'] ?? '')); ?>">
                 <td>
                     <?php if ($row['imageUrl']): ?>
                         <img class="product-thumb"
@@ -526,10 +722,30 @@ foreach ($rows as $r) {
                 <td>
                     <span class="model-name"><?php echo htmlspecialchars($row['name']); ?></span>
                     <span class="model-code"><?php echo htmlspecialchars($row['code']); ?></span>
+                    <span class="expand-hint">
+                        <?php if ($row['variantCount'] > 0): ?>
+                            ▶ <?php echo (int)$row['variantCount']; ?> Artikel anzeigen
+                        <?php else: ?>
+                            ▶ Artikel laden
+                        <?php endif; ?>
+                    </span>
                 </td>
                 <td><span class="family-badge"><?php echo htmlspecialchars($row['familyLabel']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['size']['display']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['angle']['display']); ?></span></td>
+                <td><span class="val-highlight"><?php echo htmlspecialchars($row['height']['display']); ?></span></td>
+                <td><span class="val-highlight"><?php echo htmlspecialchars($row['radius']['display']); ?></span></td>
+                <td>
+                    <?php
+                    $statusClass = match ($row['status']['raw']) {
+                        'active'   => 'status-active',
+                        'disabled' => 'status-disabled',
+                        default    => '',
+                    };
+                    ?>
+                    <span class="<?php echo $statusClass; ?>"><?php echo htmlspecialchars($row['status']['display']); ?></span>
+                </td>
+                <td><?php echo htmlspecialchars($row['series']['display']); ?></td>
             </tr>
             <?php endforeach; ?>
         <?php endif; ?>
@@ -539,21 +755,33 @@ foreach ($rows as $r) {
 
 <script>
 const tbody = document.querySelector('#productTable tbody');
+const colCount = <?php echo (int)$colCount; ?>;
+const variantCache = new Map();
 
 function applyFilters() {
     const search = document.getElementById('filterSearch').value.toLowerCase().trim();
     const size   = document.getElementById('filterSize').value;
     const angle  = document.getElementById('filterAngle').value;
+    const height = document.getElementById('filterHeight').value;
+    const radius = document.getElementById('filterRadius').value;
+    const status = document.getElementById('filterStatus').value;
+    const series = document.getElementById('filterSeries').value;
+
+    closeAllVariants();
 
     let visible = 0;
-    tbody.querySelectorAll('tr[data-code]').forEach(row => {
+    tbody.querySelectorAll('tr.model-row').forEach(row => {
         const matchSearch = !search
             || row.dataset.code.includes(search)
             || row.dataset.name.includes(search);
-        const matchSize   = !size  || row.dataset.size  === size;
-        const matchAngle  = !angle || row.dataset.angle === angle;
+        const matchSize   = !size   || row.dataset.size   === size;
+        const matchAngle  = !angle  || row.dataset.angle  === angle;
+        const matchHeight = !height || row.dataset.height === height;
+        const matchRadius = !radius || row.dataset.radius === radius;
+        const matchStatus = !status || row.dataset.status === status;
+        const matchSeries = !series || row.dataset.series === series;
 
-        if (matchSearch && matchSize && matchAngle) {
+        if (matchSearch && matchSize && matchAngle && matchHeight && matchRadius && matchStatus && matchSeries) {
             row.classList.remove('hidden');
             visible++;
         } else {
@@ -561,23 +789,122 @@ function applyFilters() {
         }
     });
 
-    const total = tbody.querySelectorAll('tr[data-code]').length;
+    const total = tbody.querySelectorAll('tr.model-row').length;
     document.getElementById('resultCount').textContent =
         visible === total ? `${total} Modelle` : `${visible} von ${total} Modellen`;
 }
 
 function resetFilters() {
     document.getElementById('filterSearch').value = '';
-    document.getElementById('filterSize').value   = '';
-    document.getElementById('filterAngle').value  = '';
+    document.getElementById('filterSize').value    = '';
+    document.getElementById('filterAngle').value   = '';
+    document.getElementById('filterHeight').value  = '';
+    document.getElementById('filterRadius').value  = '';
+    document.getElementById('filterStatus').value  = '';
+    document.getElementById('filterSeries').value  = '';
     applyFilters();
 }
+
+function closeAllVariants() {
+    tbody.querySelectorAll('tr.variant-row').forEach(row => row.remove());
+    tbody.querySelectorAll('tr.model-row.expanded').forEach(row => row.classList.remove('expanded'));
+}
+
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function renderVariantTable(variants) {
+    if (!variants.length) {
+        return '<div class="variant-empty">Keine Artikel zu diesem Modell gefunden.</div>';
+    }
+
+    const rows = variants.map(variant => {
+        const statusClass = variant.status?.raw === 'active' ? 'status-active' : 'status-disabled';
+        return `<tr>
+            <td class="sku">${escapeHtml(variant.identifier)}</td>
+            <td>${escapeHtml(variant.name)}</td>
+            <td><span class="val-highlight">${escapeHtml(variant.length?.display ?? '–')}</span></td>
+            <td>${escapeHtml(variant.radius?.display ?? '–')}</td>
+            <td><span class="${statusClass}">${escapeHtml(variant.status?.display ?? '–')}</span></td>
+        </tr>`;
+    }).join('');
+
+    return `<table class="variant-table">
+        <thead>
+            <tr>
+                <th>Artikelnummer</th>
+                <th>Bezeichnung</th>
+                <th>Länge</th>
+                <th>Radius</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function toggleVariants(row) {
+    const modelCode = row.dataset.model;
+    const existing = row.nextElementSibling;
+
+    if (existing?.classList.contains('variant-row')) {
+        existing.remove();
+        row.classList.remove('expanded');
+        return;
+    }
+
+    closeAllVariants();
+    row.classList.add('expanded');
+
+    const detailRow = document.createElement('tr');
+    detailRow.className = 'variant-row';
+    detailRow.innerHTML = `<td colspan="${colCount}">
+        <div class="variant-panel">
+            <h3>Artikel / Längen</h3>
+            <div class="variant-loading">Lade Artikel …</div>
+        </div>
+    </td>`;
+    row.after(detailRow);
+
+    const panel = detailRow.querySelector('.variant-panel');
+
+    try {
+        let payload = variantCache.get(modelCode);
+        if (!payload) {
+            const response = await fetch(`bendingtool_finder_api.php?model=${encodeURIComponent(modelCode)}`);
+            payload = await response.json();
+            if (!response.ok) {
+                throw new Error(payload.error || 'Artikel konnten nicht geladen werden.');
+            }
+            variantCache.set(modelCode, payload);
+        }
+
+        panel.innerHTML = `<h3>Artikel / Längen (${payload.variants.length})</h3>${renderVariantTable(payload.variants)}`;
+    } catch (error) {
+        panel.innerHTML = `<h3>Artikel / Längen</h3><div class="variant-error">${escapeHtml(error.message)}</div>`;
+    }
+}
+
+tbody.addEventListener('click', (event) => {
+    const row = event.target.closest('tr.model-row');
+    if (!row || row.classList.contains('hidden')) {
+        return;
+    }
+    toggleVariants(row);
+});
 
 // Tabellen-Sortierung
 let sortCol = -1, sortAsc = true;
 
 function sortTable(col) {
-    const rows = Array.from(tbody.querySelectorAll('tr[data-code]'));
+    closeAllVariants();
+
+    const rows = Array.from(tbody.querySelectorAll('tr.model-row'));
 
     if (sortCol === col) { sortAsc = !sortAsc; }
     else { sortCol = col; sortAsc = true; }
@@ -587,7 +914,16 @@ function sortTable(col) {
         if (i === col) th.classList.add(sortAsc ? 'sorted-asc' : 'sorted-desc');
     });
 
-    const dataAttrMap = {1: 'name', 2: 'family', 3: 'size', 4: 'angle'};
+    const dataAttrMap = {
+        1: 'name',
+        2: 'family',
+        3: 'size',
+        4: 'angle',
+        5: 'height',
+        6: 'radius',
+        7: 'status',
+        8: 'series',
+    };
     const attr = dataAttrMap[col] ?? 'name';
 
     rows.sort((a, b) => {
@@ -603,9 +939,10 @@ function sortTable(col) {
     rows.forEach(r => tbody.appendChild(r));
 }
 
-// Initiale Anzeige der Gesamtzahl
 applyFilters();
 </script>
+
+<?php renderSiteFooter(); ?>
 
 </body>
 </html>

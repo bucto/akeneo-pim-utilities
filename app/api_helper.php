@@ -180,6 +180,20 @@ function unitAbbr(string $unit): string {
  * Extrahiert einen einzelnen Attributwert aus einem Produkt als [display, raw].
  * Erkennt Maßattribute (amount/unit), Multi-Select-Arrays und einfache Werte.
  */
+/**
+ * Probiert mehrere Attribut-Codes der Reihe nach (Fallback-Kette aus config/env).
+ */
+function extractAttrValueFirst(array $entity, string $envConstant): array {
+    $codes = array_values(array_filter(array_map('trim', explode(',', $envConstant))));
+    foreach ($codes as $code) {
+        $val = extractAttrValue($entity, $code);
+        if ($val['raw'] !== null && $val['raw'] !== '') {
+            return $val;
+        }
+    }
+    return ['display' => '–', 'raw' => null];
+}
+
 function extractAttrValue(array $product, string $attrCode): array {
     $entry = pickValueEntry($product['values'][$attrCode] ?? []);
     if (!$entry) return ['display' => '–', 'raw' => null];
@@ -466,4 +480,54 @@ function getAkeneoProductsByFamily(string $familyCode): array {
     usort($disabledProducts, fn($a, $b) => strcasecmp($a['identifier'], $b['identifier']));
 
     return ['active' => $activeProducts, 'disabled' => $disabledProducts];
+}
+
+/**
+ * Holt alle Varianten-Produkte zu einem Produktmodell (parent = Modellcode).
+ */
+function getAkeneoProductsByParent(string $parentCode, array $onlyAttrs = []): array {
+    if ($parentCode === '') {
+        return [];
+    }
+
+    $accessToken  = getAccessToken();
+    $allProducts  = [];
+    $page         = 1;
+    $limit        = 100;
+    $searchParams = ['parent' => [['operator' => '=', 'value' => $parentCode]]];
+    $searchQuery  = urlencode(json_encode($searchParams));
+    $attrsParam   = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
+
+    while (true) {
+        $url      = API_BASE_URL . "/products?search={$searchQuery}&page={$page}&limit={$limit}"
+                  . pimContextQuery() . $attrsParam;
+        $response = apiGet($url, $accessToken);
+
+        if ($response === null || isset($response['code'])) {
+            break;
+        }
+
+        $items = $response['_embedded']['items'] ?? [];
+        if (empty($items)) {
+            break;
+        }
+
+        $allProducts = array_merge($allProducts, $items);
+
+        if (!isset($response['_links']['next']) || count($items) < $limit) {
+            break;
+        }
+        $page++;
+    }
+
+    usort($allProducts, function ($a, $b) {
+        $lenA = extractAttrValueFirst($a, PIM_BENDING_LENGTH_ATTRS)['raw'];
+        $lenB = extractAttrValueFirst($b, PIM_BENDING_LENGTH_ATTRS)['raw'];
+        if ($lenA !== null && $lenB !== null && is_numeric($lenA) && is_numeric($lenB)) {
+            return (float)$lenA <=> (float)$lenB;
+        }
+        return strcasecmp($a['identifier'] ?? '', $b['identifier'] ?? '');
+    });
+
+    return $allProducts;
 }

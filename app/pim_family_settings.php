@@ -400,5 +400,8 @@ function filterTable(query) {
     });
 }
 </script>
+
+<?php renderSiteFooter(); ?>
+
 </body>
 </html>

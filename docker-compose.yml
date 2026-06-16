@@ -1,7 +1,10 @@
 services:
 
   web_frontend:
-    build: ./app
+    build:
+      context: ./app
+      args:
+        GIT_REVISION: ${GIT_REVISION:-dev}
     container_name: akeneo_pim_utilities
     restart: unless-stopped
     ports:
@@ -24,6 +27,9 @@ services:
       PIM_LOCALE:         ${PIM_LOCALE:-de_DE}
       PIM_CHANNEL:        ${PIM_CHANNEL:-ecommerce}
       ADMIN_ENABLED:      ${ADMIN_ENABLED:-false}
+      APP_AUTHOR:         ${APP_AUTHOR:-Thomas Bücken}
+      APP_REPO:           ${APP_REPO:-https://github.com/bucto/akeneo-pim-utilities}
+      APP_REVISION:       ${APP_REVISION:-}
     networks:
       - default
       - amada-db

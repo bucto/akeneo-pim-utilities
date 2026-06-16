@@ -496,5 +496,7 @@ document.getElementById('skuForm') && (document.getElementById('skuForm').onsubm
 });
 </script>
 
+<?php renderSiteFooter(); ?>
+
 </body>
 </html>

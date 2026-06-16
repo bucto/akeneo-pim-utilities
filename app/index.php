@@ -123,5 +123,7 @@
     <?php endif; ?>
 </div>
 
+<?php renderSiteFooter(); ?>
+
 </body>
 </html>
