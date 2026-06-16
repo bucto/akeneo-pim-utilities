@@ -38,6 +38,11 @@ $tabFamilies = filterFamiliesForTab($allFamilies, $activeTab, $hasConfig);
 $products = [];
 if ($selectedFamily) {
     $products = getAkeneoProductsByFamily($selectedFamily);
+
+    // Automatisch auf deaktivierte wechseln wenn keine aktiven vorhanden
+    if ($filterStatus === 'active' && empty($products['active']) && !empty($products['disabled'])) {
+        $filterStatus = 'disabled';
+    }
 }
 
 // --- Hilfsfunktion: Tab-URL ---
