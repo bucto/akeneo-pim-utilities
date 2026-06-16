@@ -1,0 +1,19 @@
+# Umgebungsvariablen mit echten Zugangsdaten
+.env
+.env.local
+.env.*.local
+
+# Beispiel-Datei bewusst versionieren
+!.env.example
+
+# Lokale Duplikate / Artefakte
+/amada-logo.svg
+app/REVISION
+
+# IDE & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
