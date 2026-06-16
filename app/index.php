@@ -14,17 +14,22 @@ $allFamilies = getAkeneoFamilies();
 $hasConfig = hasAnyFamilyConfig();
 
 function filterFamiliesForTab(array $allFamilies, string $tab, bool $hasConfig): array {
-    if (!$hasConfig) {
-        return $allFamilies;
+    if ($hasConfig) {
+        $configured = getConfiguredFamiliesForContext($tab) ?? [];
+        if (empty($configured)) {
+            return [];
+        }
+        $allowedCodes = array_column($configured, 'family_code');
+        $allFamilies  = array_values(array_filter($allFamilies, fn($f) => in_array($f['code'], $allowedCodes)));
     }
 
-    $configured = getConfiguredFamiliesForContext($tab) ?? [];
-    if (empty($configured)) {
-        return [];
-    }
+    usort($allFamilies, function($a, $b) {
+        $labelA = $a['labels']['de_DE'] ?? $a['code'];
+        $labelB = $b['labels']['de_DE'] ?? $b['code'];
+        return strcasecmp($labelA, $labelB);
+    });
 
-    $allowedCodes = array_column($configured, 'family_code');
-    return array_filter($allFamilies, fn($f) => in_array($f['code'], $allowedCodes));
+    return $allFamilies;
 }
 
 $tabFamilies = filterFamiliesForTab($allFamilies, $activeTab, $hasConfig);
