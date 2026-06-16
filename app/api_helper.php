@@ -63,7 +63,57 @@ function apiGet(string $url, string $accessToken): ?array {
         "Content-Type: application/json",
     ]);
     $result = @file_get_contents($url, false, $context);
-    return $result !== false ? json_decode($result, true) : null;
+    if ($result === false) {
+        $GLOBALS['_akeneo_last_api_error'] = 'HTTP-Anfrage fehlgeschlagen: ' . $url;
+        return null;
+    }
+
+    $response = json_decode($result, true);
+    if (is_array($response) && isset($response['code'])) {
+        $GLOBALS['_akeneo_last_api_error'] = trim(
+            ($response['message'] ?? 'API-Fehler') . ' [' . ($response['code'] ?? '') . ']'
+        );
+    }
+
+    return $response;
+}
+
+/** Letzte API-Fehlermeldung (für Admin-Diagnose). */
+function getLastApiError(): ?string {
+    return $GLOBALS['_akeneo_last_api_error'] ?? null;
+}
+
+/** scope + locale für Produkt-/Modell-Abfragen. */
+function pimContextQuery(): string {
+    return '&scope=' . urlencode(PIM_CHANNEL) . '&locale=' . urlencode(PIM_LOCALE);
+}
+
+/**
+ * Wählt den passenden Wert-Eintrag für Kanal/Locale (Priorität wie amada-exponate).
+ */
+function pickValueEntry(array $entries): ?array {
+    if (empty($entries)) {
+        return null;
+    }
+
+    $locale = PIM_LOCALE;
+    $scope  = PIM_CHANNEL;
+    $checks = [
+        fn($e) => ($e['scope'] ?? null) === $scope && ($e['locale'] ?? null) === $locale,
+        fn($e) => ($e['scope'] ?? null) === $scope && ($e['locale'] ?? null) === null,
+        fn($e) => ($e['scope'] ?? null) === null && ($e['locale'] ?? null) === $locale,
+        fn($e) => ($e['scope'] ?? null) === null && ($e['locale'] ?? null) === null,
+    ];
+
+    foreach ($checks as $match) {
+        foreach ($entries as $entry) {
+            if ($match($entry)) {
+                return $entry;
+            }
+        }
+    }
+
+    return $entries[0];
 }
 
 /**
@@ -131,7 +181,7 @@ function unitAbbr(string $unit): string {
  * Erkennt Maßattribute (amount/unit), Multi-Select-Arrays und einfache Werte.
  */
 function extractAttrValue(array $product, string $attrCode): array {
-    $entry = $product['values'][$attrCode][0] ?? null;
+    $entry = pickValueEntry($product['values'][$attrCode] ?? []);
     if (!$entry) return ['display' => '–', 'raw' => null];
 
     $rawData = $entry['data'];
@@ -213,7 +263,8 @@ function getAkeneoProductsByFamilies(array $familyCodes, array $onlyAttrs = []):
     $attrsParam   = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
 
     while (true) {
-        $url      = API_BASE_URL . "/products?search={$searchQuery}&page={$page}&limit={$limit}{$attrsParam}";
+        $url      = API_BASE_URL . "/products?search={$searchQuery}&page={$page}&limit={$limit}"
+                  . pimContextQuery() . $attrsParam;
         $response = apiGet($url, $accessToken);
 
         if ($response === null || isset($response['code'])) break;
@@ -244,7 +295,27 @@ function getAkeneoProductsByFamilies(array $familyCodes, array $onlyAttrs = []):
  * @param  bool   $rootOnly  Nur Modelle ohne Parent (keine Unter-Modelle)
  * @return array
  */
-function getAkeneoProductModelsByFamilies(array $familyCodes, array $onlyAttrs = [], bool $rootOnly = true): array {
+function getAkeneoProductModelsByFamilies(array $familyCodes, array $onlyAttrs = [], bool $rootOnly = false): array {
+    if (empty($familyCodes)) return [];
+
+    $merged = fetchProductModelsForFamilies($familyCodes, $onlyAttrs, $rootOnly);
+    if (!empty($merged)) {
+        return $merged;
+    }
+
+    // Fallback: pro Familie einzeln (manche Akeneo-Setups mögen kein IN mit vielen Codes)
+    foreach ($familyCodes as $familyCode) {
+        $chunk = fetchProductModelsForFamilies([$familyCode], $onlyAttrs, $rootOnly);
+        $merged = array_merge($merged, $chunk);
+    }
+
+    return $merged;
+}
+
+/**
+ * Interne Abfrage: Produktmodelle einer oder mehrerer Familien.
+ */
+function fetchProductModelsForFamilies(array $familyCodes, array $onlyAttrs, bool $rootOnly): array {
     if (empty($familyCodes)) return [];
 
     $accessToken = getAccessToken();
@@ -252,7 +323,7 @@ function getAkeneoProductModelsByFamilies(array $familyCodes, array $onlyAttrs =
     $page        = 1;
     $limit       = 100;
 
-    $searchParams = ['family' => [['operator' => 'IN', 'value' => $familyCodes]]];
+    $searchParams = ['family' => [['operator' => 'IN', 'value' => array_values($familyCodes)]]];
     if ($rootOnly) {
         $searchParams['parent'] = [['operator' => 'EMPTY']];
     }
@@ -261,7 +332,8 @@ function getAkeneoProductModelsByFamilies(array $familyCodes, array $onlyAttrs =
     $attrsParam  = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
 
     while (true) {
-        $url      = API_BASE_URL . "/product-models?search={$searchQuery}&page={$page}&limit={$limit}{$attrsParam}";
+        $url      = API_BASE_URL . "/product-models?search={$searchQuery}&page={$page}&limit={$limit}"
+                  . pimContextQuery() . $attrsParam;
         $response = apiGet($url, $accessToken);
 
         if ($response === null || isset($response['code'])) break;
@@ -288,8 +360,11 @@ function getAkeneoProductModelsByFamilies(array $familyCodes, array $onlyAttrs =
  */
 function getAkeneoProductModel(string $code, array $onlyAttrs = []): ?array {
     $accessToken = getAccessToken();
-    $attrsParam  = empty($onlyAttrs) ? '' : ('?attributes=' . urlencode(implode(',', $onlyAttrs)));
-    $model       = apiGet(API_BASE_URL . '/product-models/' . urlencode($code) . $attrsParam, $accessToken);
+    $attrsParam  = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
+    $model       = apiGet(
+        API_BASE_URL . '/product-models/' . urlencode($code) . '?' . ltrim(pimContextQuery(), '&') . $attrsParam,
+        $accessToken
+    );
 
     if (!$model || !isset($model['code'])) {
         return null;
@@ -328,16 +403,23 @@ function filterLeafProductModels(array $models): array {
  * Deutsche Produktbezeichnung aus values extrahieren.
  */
 function extractProductName(array $entity, string $locale = 'de_DE'): ?string {
-    $name = null;
-    foreach ($entity['values']['product_name'] ?? [] as $val) {
-        if (($val['locale'] ?? null) === $locale) {
-            return is_string($val['data'] ?? null) ? $val['data'] : null;
-        }
-        if (($val['locale'] ?? null) === null && $name === null) {
-            $name = is_string($val['data'] ?? null) ? $val['data'] : null;
+    $entries = $entity['values']['product_name'] ?? [];
+    if (empty($entries)) {
+        return null;
+    }
+
+    $entry = pickValueEntry($entries);
+    if ($entry && is_string($entry['data'] ?? null)) {
+        return $entry['data'];
+    }
+
+    foreach ($entries as $val) {
+        if (($val['locale'] ?? null) === $locale && is_string($val['data'] ?? null)) {
+            return $val['data'];
         }
     }
-    return $name;
+
+    return null;
 }
 
 /**

@@ -4,7 +4,7 @@ include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v2_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v3_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 $loadDebug   = [];
@@ -71,8 +71,15 @@ function loadBendingToolData(): array {
         $familyLabels[$f['code']] = $f['labels']['de_DE'] ?? $f['code'];
     }
 
-    // 1) Alle Produktmodelle der Familien (ohne Parent-Filter)
-    $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
+    // 1) Produktmodelle laden — zuerst ohne Attribut-Filter (robuster), dann mit Attributen
+    $allModels = getAkeneoProductModelsByFamilies($familyCodes, [], false);
+    $loadDebug['api_error'] = getLastApiError();
+
+    if (empty($allModels)) {
+        $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
+        $loadDebug['api_error'] = getLastApiError();
+    }
+
     $loadDebug['product_models_total'] = count($allModels);
 
     $models = filterLeafProductModels($allModels);
@@ -117,7 +124,10 @@ function loadBendingToolData(): array {
     }
 
     if (empty($models)) {
-        $loadDebug['message'] = 'Keine Produktmodelle gefunden. Prüfen Sie Familien-Zuweisung und PIM-Struktur.';
+        $loadDebug['message'] = 'Keine Produktmodelle gefunden. Prüfen Sie Familien-Zuweisung (Tab Abkantwerkzeuge) und PIM-Struktur.';
+        if (getLastApiError()) {
+            $loadDebug['message'] .= ' API: ' . getLastApiError();
+        }
         return [];
     }
 
@@ -435,6 +445,10 @@ foreach ($rows as $r) {
     <?php if (!empty($loadDebug['source'])): ?>
         <br>Quelle: <code><?php echo htmlspecialchars($loadDebug['source']); ?></code>
     <?php endif; ?>
+    <?php if (!empty($loadDebug['api_error'])): ?>
+        <br>API-Fehler: <code><?php echo htmlspecialchars($loadDebug['api_error']); ?></code>
+    <?php endif; ?>
+    <br><small>Hinweis: PIM-URLs wie <code>…/product-model/2566</code> nutzen eine interne ID — die REST-API benötigt den Modell-<strong>Code</strong> (Feld „Code“ in Akeneo).</small>
 </div>
 <?php endif; ?>
 

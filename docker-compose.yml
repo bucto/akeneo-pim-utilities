@@ -21,6 +21,8 @@ services:
       PIM_MEDIA_BASE_URL: ${PIM_MEDIA_BASE_URL:-}
       PIM_MEDIA_CACHE:    ${PIM_MEDIA_CACHE:-thumbnail_small}
       PIM_IMAGE_ATTRS:    ${PIM_IMAGE_ATTRS:-picture,filename_picture_perspective}
+      PIM_LOCALE:         ${PIM_LOCALE:-de_DE}
+      PIM_CHANNEL:        ${PIM_CHANNEL:-ecommerce}
       ADMIN_ENABLED:      ${ADMIN_ENABLED:-false}
     networks:
       - default

@@ -23,3 +23,7 @@ define('DB_PASS', getenv('DB_PASSWORD') ?: '');
 define('PIM_MEDIA_BASE_URL', getenv('PIM_MEDIA_BASE_URL') ?: 'https://pim.amada.de');
 define('PIM_MEDIA_CACHE',    getenv('PIM_MEDIA_CACHE')    ?: 'thumbnail_small');
 define('PIM_IMAGE_ATTRS',    getenv('PIM_IMAGE_ATTRS')    ?: 'picture,filename_picture_perspective');
+
+// --- PIM KANAL & LOCALE (wie amada-exponate) ---
+define('PIM_LOCALE',  getenv('PIM_LOCALE')  ?: 'de_DE');
+define('PIM_CHANNEL', getenv('PIM_CHANNEL') ?: 'ecommerce');
