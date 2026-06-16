@@ -39,7 +39,7 @@ $products = [];
 if ($selectedFamily) {
     $products = getAkeneoProductsByFamily($selectedFamily);
 
-    // Automatisch auf deaktivierte wechseln wenn keine aktiven vorhanden
+    // Automatisch auf "Deaktivierte" wechseln wenn keine aktiven vorhanden sind
     if ($filterStatus === 'active' && empty($products['active']) && !empty($products['disabled'])) {
         $filterStatus = 'disabled';
     }
