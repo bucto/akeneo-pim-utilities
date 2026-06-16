@@ -111,7 +111,7 @@ App erreichbar unter: `http://localhost:8085` (Port über `APP_PORT` änderbar)
 
 ## Konfiguration
 
-Vorlage: [`.env.example`](.env.example). **Niemals** die echte `.env` committen — sie steht in [`.gitignore`](.gitignore).
+Vorlage: [`.env.example`](.env.example).
 
 ### Docker & Netzwerk
 
