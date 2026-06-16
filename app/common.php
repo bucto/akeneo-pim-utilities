@@ -7,12 +7,25 @@ define('AMADA_LOGO_PATH', 'assets/amada-logo.svg');
 define('APP_AUTHOR', getenv('APP_AUTHOR') ?: 'Thomas Bücken');
 define('APP_REPO',   getenv('APP_REPO')   ?: 'https://github.com/bucto/akeneo-pim-utilities');
 
+/** GitHub-Owner/Repo aus APP_REPO extrahieren. */
+function parseGithubRepo(): ?array {
+    if (!preg_match('#github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$#i', APP_REPO, $matches)) {
+        return null;
+    }
+
+    return [
+        'owner'  => $matches[1],
+        'repo'   => preg_replace('#\.git$#', '', $matches[2]),
+        'branch' => getenv('APP_GIT_BRANCH') ?: 'main',
+    ];
+}
+
 /**
- * Git-Revisionsnummer:
- * APP_REVISION → REVISION-Datei → GitHub-API (Portainer ohne .git) → lokales git → dev
+ * Letzten Commit von GitHub (privates Repo benoetigt GITHUB_TOKEN).
  */
 function fetchGithubRevisionFromRepo(): ?string {
-    if (!preg_match('#github\.com[/:]([\w.-]+)/([\w.-]+?)(?:\.git)?/?$#i', APP_REPO, $matches)) {
+    $github = parseGithubRepo();
+    if (!$github) {
         return null;
     }
 
@@ -24,10 +37,12 @@ function fetchGithubRevisionFromRepo(): ?string {
         }
     }
 
-    $owner  = $matches[1];
-    $repo   = preg_replace('#\.git$#', '', $matches[2]);
-    $branch = getenv('APP_GIT_BRANCH') ?: 'main';
-    $url    = "https://api.github.com/repos/{$owner}/{$repo}/commits/" . rawurlencode($branch);
+    $url = sprintf(
+        'https://api.github.com/repos/%s/%s/commits/%s',
+        rawurlencode($github['owner']),
+        rawurlencode($github['repo']),
+        rawurlencode($github['branch'])
+    );
 
     $headers = "User-Agent: akeneo-pim-utilities\r\nAccept: application/vnd.github+json\r\n";
     $token   = getenv('GITHUB_TOKEN');
@@ -35,19 +50,15 @@ function fetchGithubRevisionFromRepo(): ?string {
         $headers .= "Authorization: Bearer {$token}\r\n";
     }
 
-    $tlsInsecure = defined('TLS_INSECURE')
-        ? TLS_INSECURE
-        : filter_var(getenv('PIM_TLS_INSECURE') ?: 'true', FILTER_VALIDATE_BOOLEAN);
-
     $context = stream_context_create([
         'http' => [
             'method'  => 'GET',
             'header'  => $headers,
-            'timeout' => 5,
+            'timeout' => 8,
         ],
         'ssl' => [
-            'verify_peer'      => !$tlsInsecure,
-            'verify_peer_name' => !$tlsInsecure,
+            'verify_peer'      => true,
+            'verify_peer_name' => true,
         ],
     ]);
 
@@ -66,6 +77,70 @@ function fetchGithubRevisionFromRepo(): ?string {
     @file_put_contents($cacheFile, json_encode(['rev' => $rev, 'expires' => time() + 600]));
 
     return $rev;
+}
+
+/** Fallback: Hash ueber den Quellcode im Container (aendert sich bei jedem Deploy). */
+function computeSourceRevisionHash(): string {
+    $hashes = [];
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator(__DIR__, FilesystemIterator::SKIP_DOTS)
+    );
+
+    foreach ($iterator as $file) {
+        if (!$file->isFile()) {
+            continue;
+        }
+
+        $basename = $file->getFilename();
+        if ($basename === 'REVISION') {
+            continue;
+        }
+
+        $hashes[] = hash_file('sha256', $file->getPathname());
+    }
+
+    sort($hashes);
+
+    return 'src-' . substr(hash('sha256', implode('', $hashes)), 0, 7);
+}
+
+/**
+ * Revision ermitteln (ohne REVISION-Datei zu lesen).
+ */
+function resolveAppRevision(): string {
+    $fromGithub = fetchGithubRevisionFromRepo();
+    if ($fromGithub) {
+        return $fromGithub;
+    }
+
+    $repoRoot = dirname(__DIR__);
+    if (is_dir($repoRoot . '/.git')) {
+        $hash = @shell_exec('git -C ' . escapeshellarg($repoRoot) . ' rev-parse --short HEAD 2>/dev/null');
+        if (is_string($hash)) {
+            $hash = trim($hash);
+            if ($hash !== '') {
+                return $hash;
+            }
+        }
+    }
+
+    return computeSourceRevisionHash();
+}
+
+/** REVISION-Datei beim Container-Start aktualisieren. */
+function refreshRevisionFile(): void {
+    $revFile = __DIR__ . '/REVISION';
+    $current = is_readable($revFile) ? trim((string)file_get_contents($revFile)) : '';
+
+    if ($current !== '' && $current !== 'dev' && !str_starts_with($current, 'src-')) {
+        return;
+    }
+
+    $rev = resolveAppRevision();
+    if ($rev !== '' && $rev !== $current) {
+        @file_put_contents($revFile, $rev . PHP_EOL);
+    }
 }
 
 function getAppRevision(): string {
@@ -87,23 +162,7 @@ function getAppRevision(): string {
         }
     }
 
-    $fromGithub = fetchGithubRevisionFromRepo();
-    if ($fromGithub) {
-        return $revision = $fromGithub;
-    }
-
-    $repoRoot = dirname(__DIR__);
-    if (is_dir($repoRoot . '/.git')) {
-        $hash = @shell_exec('git -C ' . escapeshellarg($repoRoot) . ' rev-parse --short HEAD 2>/dev/null');
-        if (is_string($hash)) {
-            $hash = trim($hash);
-            if ($hash !== '') {
-                return $revision = $hash;
-            }
-        }
-    }
-
-    return $revision = 'dev';
+    return $revision = resolveAppRevision();
 }
 
 /** Anzeigename des Repository-Links ohne Schema und .git-Suffix */

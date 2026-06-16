@@ -32,7 +32,9 @@ services:
       ADMIN_ENABLED:      ${ADMIN_ENABLED:-false}
       APP_AUTHOR:         ${APP_AUTHOR:-Thomas Bücken}
       APP_REPO:           ${APP_REPO:-https://github.com/bucto/akeneo-pim-utilities}
+      APP_GIT_BRANCH:     ${APP_GIT_BRANCH:-main}
       APP_REVISION:       ${APP_REVISION:-}
+      GITHUB_TOKEN:       ${GITHUB_TOKEN:-}
     networks:
       - default
       - amada-db
