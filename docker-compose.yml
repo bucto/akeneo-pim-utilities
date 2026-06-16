@@ -2,7 +2,8 @@ services:
 
   web_frontend:
     build:
-      context: ./app
+      context: .
+      dockerfile: app/Dockerfile
       args:
         GIT_REVISION: ${GIT_REVISION:-dev}
     container_name: akeneo_pim_utilities

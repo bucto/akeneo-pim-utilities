@@ -373,6 +373,13 @@ function fetchProductModelsForFamilies(array $familyCodes, array $onlyAttrs, boo
  * Einzelnes Produktmodell per Code laden.
  */
 function getAkeneoProductModel(string $code, array $onlyAttrs = []): ?array {
+    static $cache = [];
+
+    $cacheKey = $code . '|' . implode(',', $onlyAttrs);
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
     $accessToken = getAccessToken();
     $attrsParam  = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
     $model       = apiGet(
@@ -381,11 +388,118 @@ function getAkeneoProductModel(string $code, array $onlyAttrs = []): ?array {
     );
 
     if (!$model || !isset($model['code'])) {
+        $cache[$cacheKey] = null;
         return null;
     }
 
     $model['_imageUrl'] = extractProductImageUrl($model);
+    $cache[$cacheKey] = $model;
     return $model;
+}
+
+/**
+ * Einzelnes Produkt per SKU/Identifier laden (Kanal + Locale).
+ */
+function getAkeneoProduct(string $identifier, array $onlyAttrs = []): ?array {
+    static $cache = [];
+
+    $cacheKey = $identifier . '|' . implode(',', $onlyAttrs);
+    if (array_key_exists($cacheKey, $cache)) {
+        return $cache[$cacheKey];
+    }
+
+    $accessToken = getAccessToken();
+    $attrsParam  = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
+    $product     = apiGet(
+        API_BASE_URL . '/products/' . urlencode($identifier) . '?' . ltrim(pimContextQuery(), '&') . $attrsParam,
+        $accessToken
+    );
+
+    if (!$product || !isset($product['identifier'])) {
+        $cache[$cacheKey] = null;
+        return null;
+    }
+
+    $product['_imageUrl'] = extractProductImageUrl($product);
+    $cache[$cacheKey] = $product;
+    return $product;
+}
+
+/**
+ * Produktmodell-Kette von der Wurzel bis zum direkten Parent (max. 10 Ebenen).
+ */
+function getProductModelAncestorChain(string $modelCode): array {
+    static $chainCache = [];
+
+    if (isset($chainCache[$modelCode])) {
+        return $chainCache[$modelCode];
+    }
+
+    $chain   = [];
+    $current = $modelCode;
+    $guard   = 0;
+
+    while ($current && $guard < 10) {
+        $model = getAkeneoProductModel($current);
+        if (!$model) {
+            break;
+        }
+        array_unshift($chain, $model);
+        $current = $model['parent'] ?? null;
+        $guard++;
+    }
+
+    $chainCache[$modelCode] = $chain;
+    return $chain;
+}
+
+/**
+ * Werte mehrerer Entitäten zusammenführen — spätere Ebenen überschreiben frühere.
+ */
+function mergeEntityValues(array $entities): array {
+    $merged = [];
+
+    foreach ($entities as $entity) {
+        foreach ($entity['values'] ?? [] as $attrCode => $entries) {
+            if (!empty($entries)) {
+                $merged[$attrCode] = $entries;
+            }
+        }
+    }
+
+    return $merged;
+}
+
+/**
+ * Produkt inkl. geerbter Werte aus allen übergeordneten Produktmodell-Ebenen.
+ * Wichtig für mehrstufige Varianten-Hierarchien (z.B. Allgemein → Presskraft → Länge).
+ */
+function getAkeneoProductWithInheritedValues(string $identifier, array $onlyAttrs = []): ?array {
+    $product = getAkeneoProduct($identifier, $onlyAttrs);
+    if (!$product) {
+        return null;
+    }
+
+    $entities = [];
+    $parentCode = $product['parent'] ?? null;
+    if ($parentCode) {
+        $entities = getProductModelAncestorChain($parentCode);
+    }
+    $entities[] = $product;
+
+    $product['values'] = mergeEntityValues($entities);
+
+    if (!$product['_imageUrl']) {
+        foreach (array_reverse($entities) as $entity) {
+            $imageUrl = $entity['_imageUrl'] ?? extractProductImageUrl($entity);
+            if ($imageUrl) {
+                $product['_imageUrl'] = $imageUrl;
+                break;
+            }
+        }
+    }
+
+    return $product;
 }
 
 /**

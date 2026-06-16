@@ -108,12 +108,43 @@
         return apiGet("$baseUrl/attributes/$attributeCode", $accessToken);
     }
 
-    function getMatrixProductAttributes($baseUrl, $accessToken, $sku, $locale = 'de_DE') {
-        return apiGet("$baseUrl/products/" . urlencode($sku) . "?locale=$locale", $accessToken);
-    }
-
     function getMatrixAttributeOptions($baseUrl, $accessToken, $attributeCode) {
         return apiGet("$baseUrl/attributes/$attributeCode/options?limit=100", $accessToken);
+    }
+
+    /**
+     * Attributwert für die Vergleichsmatrix formatieren (Kanal/Locale-aware).
+     */
+    function formatMatrixValue(string $attribute, ?array $entries, array $optionsMap): string {
+        $entry = pickValueEntry($entries ?? []);
+        if (!$entry) {
+            return '-';
+        }
+
+        $rawData = $entry['data'];
+
+        if (is_array($rawData) && array_key_exists('amount', $rawData) && array_key_exists('unit', $rawData)) {
+            return formatAmount((string)$rawData['amount']) . ' ' . unitAbbr($rawData['unit']);
+        }
+
+        if (is_array($rawData) && !array_key_exists('amount', $rawData)) {
+            $mapped = array_map(fn($v) => $optionsMap[$attribute][$v] ?? $v, $rawData);
+            return implode(', ', $mapped);
+        }
+
+        $display = $optionsMap[$attribute][$rawData] ?? $rawData;
+
+        if (is_numeric($display)) {
+            $f       = (float)$display;
+            $display = ($f == floor($f)) ? (int)$f : $f;
+        }
+
+        $legacyUnit = $entry['unit'] ?? '';
+        if ($legacyUnit) {
+            $display .= ' ' . unitAbbr($legacyUnit);
+        }
+
+        return (string)$display;
     }
 
     if (!isset($_GET['skus']) || empty($_GET['skus'])) {
@@ -129,23 +160,21 @@
     $imageUrls  = [];
 
     foreach ($skus as $sku) {
-        $product = getMatrixProductAttributes(API_BASE_URL, $accessToken, $sku, 'de_DE');
+        // Werte von Parent-Modellen (1..n Ebenen) mit dem Produkt zusammenführen
+        $product = getAkeneoProductWithInheritedValues($sku);
         if (!$product || !isset($product['values'])) continue;
 
         $products[$sku]  = $product['values'];
-        $imageUrls[$sku] = extractProductImageUrl($product);
+        $imageUrls[$sku] = $product['_imageUrl'] ?? null;
 
         foreach ($product['values'] as $attribute => $data) {
             if (!in_array($attribute, $attributes)) {
                 $attributes[] = $attribute;
             }
 
-            $rawVal = $data[0]['data'] ?? null;
+            $entry  = pickValueEntry($data);
+            $rawVal = $entry['data'] ?? null;
 
-            // Option-Labels laden für:
-            // a) Einfacher Select: $rawVal ist ein nicht-numerischer String
-            // b) Multi-Select:     $rawVal ist ein numerisch-indiziertes Array von Strings
-            //    (Maßattribute haben 'amount'/'unit'-Schlüssel → kein Option-Lookup)
             $needsOptionLookup = false;
             if (!isset($optionsMap[$attribute])) {
                 if (is_string($rawVal) && $rawVal !== '' && !is_numeric($rawVal)) {
@@ -166,7 +195,6 @@
                             $option['labels']['de_DE'] ?? $option['code'];
                     }
                 }
-                // Leeres Array als Marker setzen, damit der Lookup nicht erneut ausgelöst wird
                 if (!isset($optionsMap[$attribute])) {
                     $optionsMap[$attribute] = [];
                 }
@@ -205,45 +233,13 @@
         echo '<tr><td class="attr-name">' . htmlspecialchars($attributeName) . '</td>';
 
         foreach ($skus as $sku) {
-            $value = '-';
+            $value = formatMatrixValue(
+                $attribute,
+                $products[$sku][$attribute] ?? null,
+                $optionsMap
+            );
 
-            if (isset($products[$sku][$attribute][0])) {
-                $entry   = $products[$sku][$attribute][0];
-                $rawData = $entry['data'];
-
-                // --- Maßattribut: {"amount": "7480.0000", "unit": "MILLIMETER"} ---
-                if (is_array($rawData) && array_key_exists('amount', $rawData) && array_key_exists('unit', $rawData)) {
-                    $amount = formatAmount((string)$rawData['amount']);
-                    $abbr   = unitAbbr($rawData['unit']);
-                    $value  = $amount . ' ' . $abbr;
-
-                // --- Multi-Select: array von Option-Codes ---
-                } elseif (is_array($rawData)) {
-                    $mapped = array_map(fn($v) => $optionsMap[$attribute][$v] ?? $v, $rawData);
-                    $value  = implode(', ', $mapped);
-
-                // --- Einfacher Wert (String, Zahl, Boolean) ---
-                } else {
-                    // Option-Label nachschlagen
-                    $display = $optionsMap[$attribute][$rawData] ?? $rawData;
-
-                    // Zahl formatieren
-                    if (is_numeric($display)) {
-                        $f       = (float)$display;
-                        $display = ($f == floor($f)) ? (int)$f : $f;
-                    }
-
-                    // Einheit aus separatem Feld (älteres Akeneo-Format)
-                    $legacyUnit = $entry['unit'] ?? '';
-                    if ($legacyUnit) {
-                        $display .= ' ' . unitAbbr($legacyUnit);
-                    }
-
-                    $value = $display;
-                }
-            }
-
-            echo '<td>' . htmlspecialchars((string)$value) . '</td>';
+            echo '<td>' . htmlspecialchars($value) . '</td>';
         }
         echo '</tr>';
     }

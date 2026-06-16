@@ -8,7 +8,7 @@ define('APP_AUTHOR', getenv('APP_AUTHOR') ?: 'Thomas Bücken');
 define('APP_REPO',   getenv('APP_REPO')   ?: 'https://github.com/bucto/akeneo-pim-utilities');
 
 /**
- * Git-Revisionsnummer: APP_REVISION → REVISION-Datei → git (Entwicklung) → dev
+ * Git-Revisionsnummer: APP_REVISION → REVISION-Datei (Docker-Build) → git (lokale Entwicklung) → dev
  */
 function getAppRevision(): string {
     static $revision = null;
