@@ -10,9 +10,13 @@ Das PIM (Product Information Management System) ist die zentrale Datenbank, in d
 
 ## Was kann ich damit tun?
 
-### 1. Produkte nach Bereichen auswählen
+Die Startseite bietet zwei Hauptbereiche:
 
-Auf der Startseite gibt es fünf Reiter (Tabs):
+### 1. Produkt-Vergleich
+
+Mehrere Produkte einer Familie auswählen und nebeneinander vergleichen — technische Daten oder Ausstattung.
+
+Auf der Vergleichsseite gibt es fünf Reiter (Tabs):
 
 | Tab | Enthält |
 |---|---|
@@ -24,7 +28,17 @@ Auf der Startseite gibt es fünf Reiter (Tabs):
 
 In jedem Reiter wählt man zunächst eine **Produktfamilie** (z.B. „Laserschneidmaschinen") aus einem Dropdown-Menü. Danach erscheint die Liste aller Produkte dieser Familie — mit Produktbild, Artikelnummer und Status (aktiv/deaktiviert).
 
-### 2. Produkte vergleichen
+### 2. Werkzeugfinder
+
+Abkant-Werkzeug**modelle** nach V-Öffnung und Winkel filtern — für die schnelle Suche nach dem passenden Werkzeugtyp (ohne alle Längenvarianten).
+
+### 3. Admin (nur mit `ADMIN_ENABLED=true`)
+
+PIM-Familien den Tabs zuweisen. Für normale Nutzer **nicht sichtbar** — nur Admins sehen den Link und können `pim_family_settings.php` aufrufen.
+
+---
+
+## Produkt-Vergleich im Detail
 
 Man wählt beliebig viele Produkte per Checkbox aus und startet dann den Vergleich:
 
@@ -33,10 +47,6 @@ Man wählt beliebig viele Produkte per Checkbox aus und startet dann den Verglei
 - **Ausstattung vergleichen** — Zeigt welche Zusatzgeräte und Komponenten jedem Produkt zugeordnet sind.
 
 Beide Vergleichsansichten zeigen das Produktbild jedes Artikels im Tabellenkopf, sodass man sofort weiß, über welches Gerät man spricht.
-
-### 3. Familien-Zuweisung verwalten
-
-Über den Link **„PIM-Familien konfigurieren"** auf der Startseite gelangt man zur Verwaltungsseite. Dort kann man per Checkbox festlegen, in welchem Tab jede Produktfamilie erscheinen soll. Familien die gar nicht relevant sind, können auf „Nicht laden" gesetzt werden — das macht die Seite schneller.
 
 ---
 
@@ -90,6 +100,9 @@ PIM_TLS_INSECURE=true
 PIM_MEDIA_BASE_URL=https://pim.amada.de
 PIM_MEDIA_CACHE=thumbnail_small
 PIM_IMAGE_ATTRS=picture,filename_picture_perspective
+
+# Admin-Bereich (PIM-Familien konfigurieren) – nur true für Admins
+ADMIN_ENABLED=false
 ```
 
 ### Deployment via Portainer

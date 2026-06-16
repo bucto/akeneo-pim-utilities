@@ -21,6 +21,7 @@ services:
       PIM_MEDIA_BASE_URL: ${PIM_MEDIA_BASE_URL:-}
       PIM_MEDIA_CACHE:    ${PIM_MEDIA_CACHE:-thumbnail_small}
       PIM_IMAGE_ATTRS:    ${PIM_IMAGE_ATTRS:-picture,filename_picture_perspective}
+      ADMIN_ENABLED:      ${ADMIN_ENABLED:-false}
     networks:
       - default
       - amada-db

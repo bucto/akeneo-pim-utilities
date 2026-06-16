@@ -1,5 +1,6 @@
 <?php
 include('api_helper.php');
+include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
 $cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_models_cache.json';
@@ -99,31 +100,18 @@ foreach ($rows as $r) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Abkant-Werkzeug-Finder – AMADA</title>
+    <title>Werkzeugfinder – AMADA</title>
+    <?php renderBaseStyles(); ?>
     <style>
-        :root {
-            --amada-red: #e2001a;
-            --dark-gray: #2d3748;
-            --border:    #e2e8f0;
-            --light-bg:  #f7fafc;
-            --hover-bg:  #edf2f7;
-        }
-        * { box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Roboto, Arial, sans-serif;
-            background: #edf2f7;
-            color: var(--dark-gray);
-            margin: 0;
-            padding: 24px 20px;
-        }
 
-        /* ---- Kopf ---- */
         .page-head {
             display: flex;
             align-items: center;
-            gap: 18px;
+            justify-content: space-between;
+            gap: 12px;
             flex-wrap: wrap;
-            margin-bottom: 20px;
+            margin: 0 auto 16px;
+            max-width: 960px;
         }
         h1 {
             font-size: 22px;
@@ -133,24 +121,23 @@ foreach ($rows as $r) {
             text-transform: uppercase;
             letter-spacing: 0.4px;
         }
-        .back-link {
-            font-size: 13px;
-            color: #718096;
-            text-decoration: none;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            padding: 5px 12px;
-            background: #fff;
+        .page-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
         }
-        .back-link:hover { background: var(--hover-bg); }
-
-        /* ---- Filter-Leiste ---- */
+        .cache-info {
+            font-size: 12px;
+            color: #718096;
+        }
         .filter-bar {
             background: #fff;
             border: 1px solid var(--border);
             border-radius: 8px;
             padding: 16px 20px;
-            margin-bottom: 18px;
+            margin: 0 auto 18px;
+            max-width: 960px;
             display: flex;
             gap: 16px;
             flex-wrap: wrap;
@@ -210,6 +197,8 @@ foreach ($rows as $r) {
             border: 1px solid var(--border);
             box-shadow: 0 1px 3px rgba(0,0,0,0.06);
             overflow-x: auto;
+            max-width: 960px;
+            margin: 0 auto;
         }
         table {
             width: 100%;
@@ -296,7 +285,8 @@ foreach ($rows as $r) {
         .page-hint {
             font-size: 13px;
             color: #718096;
-            margin: -8px 0 18px;
+            margin: 0 auto 18px;
+            max-width: 960px;
             line-height: 1.5;
         }
 
@@ -316,11 +306,13 @@ foreach ($rows as $r) {
 </head>
 <body>
 
+<?php renderSiteHeader('finder'); ?>
+
 <div class="page-head">
-    <h1>Abkant-Werkzeug-Finder</h1>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+    <h1>Werkzeugfinder</h1>
+    <div class="page-actions">
         <?php if ($cacheTime): ?>
-        <span style="font-size:12px;color:#718096;">
+        <span class="cache-info">
             Daten vom <?php echo date('d.m.Y H:i', $cacheTime); ?> Uhr
             <?php if ($cacheAge !== null && $cacheAge > 0): ?>
                 (vor <?php echo round($cacheAge / 60); ?> Min.)
@@ -328,7 +320,6 @@ foreach ($rows as $r) {
         </span>
         <?php endif; ?>
         <a href="bendingtool_finder.php?reload=1" class="back-link" title="Daten direkt aus dem PIM neu laden">↺ Neu laden</a>
-        <a href="index.php" class="back-link">← Zurück</a>
     </div>
 </div>
 

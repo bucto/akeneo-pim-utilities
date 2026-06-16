@@ -1,9 +1,11 @@
+<?php include 'config.php'; include 'api_helper.php'; include 'common.php'; ?>
 <!DOCTYPE html>
 <html lang="de">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Produktvergleich - Ausstattung & Assoziationen</title>
+    <title>Produkt-Vergleich – Ausstattung</title>
+    <?php renderBaseStyles(); ?>
     <style>
         body {
             font-family: 'Segoe UI', Arial, sans-serif;
@@ -108,16 +110,15 @@
 </head>
 <body>
 
+    <?php renderSiteHeader('vergleich'); ?>
+
     <div class="page-head">
         <h1>Vergleich der Ausstattung &amp; Verbindungen</h1>
-        <a href="javascript:history.back()" class="back-link">← Zurück</a>
+        <a href="produkt_vergleich.php" class="back-link">← Zurück</a>
     </div>
 
     <?php
-    include 'config.php';
-    include 'api_helper.php';
 
-    /** Vollständige Produktdaten eines SKU */
     function getProductData($baseUrl, $accessToken, $sku): ?array {
         return apiGet("$baseUrl/products/" . urlencode($sku), $accessToken);
     }

@@ -1,6 +1,9 @@
 <?php
 include('api_helper.php');
 include('db_helper.php');
+include('common.php');
+
+requireAdmin();
 
 $message = null;
 $error   = null;
@@ -66,24 +69,9 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PIM-Familien zuweisen – AMADA</title>
+    <title>PIM-Familien konfigurieren – Admin</title>
+    <?php renderBaseStyles(); ?>
     <style>
-        :root {
-            --amada-red:   #e2001a;
-            --dark-gray:   #2d3748;
-            --light-bg:    #f7fafc;
-            --border:      #cbd5e0;
-            --row-hover:   #edf2f7;
-            --excluded-bg: #fff5f5;
-        }
-        * { box-sizing: border-box; }
-        body {
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background: #edf2f7;
-            color: var(--dark-gray);
-            margin: 0;
-            padding: 30px 20px;
-        }
         .container {
             max-width: 1100px;
             background: #fff;
@@ -91,6 +79,10 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
             padding: 30px;
             border-radius: 8px;
             box-shadow: 0 4px 6px rgba(0,0,0,0.07);
+        }
+        :root {
+            --row-hover:   #edf2f7;
+            --excluded-bg: #fff5f5;
         }
         .page-header {
             display: flex;
@@ -262,11 +254,14 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
     </style>
 </head>
 <body>
+
+<?php renderSiteHeader('admin'); ?>
+
 <div class="container">
     <div class="page-header">
-        <h1>PIM-Familien zuweisen</h1>
+        <h1>PIM-Familien konfigurieren</h1>
         <div class="header-actions">
-            <a href="index.php" class="btn btn-ghost">← Zurück zur Übersicht</a>
+            <a href="index.php" class="btn btn-ghost">← Startseite</a>
         </div>
     </div>
 
