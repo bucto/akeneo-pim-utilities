@@ -326,7 +326,10 @@ $tabs = [
     <!-- Kopfzeile -->
     <div class="page-head">
         <h1>AMADA Produkt-Vergleich</h1>
-        <a href="pim_family_settings.php" class="settings-link">⚙ PIM-Familien konfigurieren</a>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="bendingtool_finder.php" class="settings-link">🔍 Abkant-Werkzeug-Finder</a>
+            <a href="pim_family_settings.php" class="settings-link">⚙ PIM-Familien konfigurieren</a>
+        </div>
     </div>
 
     <!-- Tab-Leiste -->

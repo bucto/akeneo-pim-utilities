@@ -84,6 +84,83 @@ function extractProductImageUrl(array $product): ?string {
 }
 
 /**
+ * Zahl ohne überflüssige Nachkomma-Nullen: "7480.0000" → "7480", "0.5000" → "0.5"
+ */
+function formatAmount(string $amount): string {
+    if (!is_numeric($amount)) return $amount;
+    return rtrim(rtrim(number_format((float)$amount, 4, '.', ''), '0'), '.');
+}
+
+/**
+ * Akeneo-Einheitencode → lesbare Abkürzung.
+ */
+function unitAbbr(string $unit): string {
+    static $map = [
+        'MILLIMETER'            => 'mm',   'CENTIMETER'        => 'cm',
+        'DECIMETER'             => 'dm',   'METER'             => 'm',
+        'KILOMETER'             => 'km',   'INCH'              => 'in',
+        'FOOT'                  => 'ft',
+        'GRAM'                  => 'g',    'KILOGRAM'          => 'kg',
+        'TON'                   => 't',    'POUND'             => 'lb',
+        'WATT'                  => 'W',    'KILOWATT'          => 'kW',
+        'MEGAWATT'              => 'MW',   'KILOVOLT_AMPERE'   => 'kVA',
+        'JOULE'                 => 'J',    'KILOWATT_HOUR'     => 'kWh',
+        'BAR'                   => 'bar',  'PASCAL'            => 'Pa',
+        'KILOPASCAL'            => 'kPa',  'PSI'               => 'psi',
+        'LITER'                 => 'l',    'MILLILITER'        => 'ml',
+        'CUBIC_METER'           => 'm³',   'LITER_PER_MINUTE'  => 'l/min',
+        'CUBIC_METER_PER_HOUR'  => 'm³/h',
+        'METER_PER_SECOND'      => 'm/s',  'METER_PER_MINUTE'  => 'm/min',
+        'MILLIMETER_PER_MINUTE' => 'mm/min','MILLIMETER_PER_SECOND' => 'mm/s',
+        'KILOMETER_PER_HOUR'    => 'km/h',
+        'HERTZ'                 => 'Hz',   'KILOHERTZ'         => 'kHz',
+        'MEGAHERTZ'             => 'MHz',
+        'CELSIUS'               => '°C',   'FAHRENHEIT'        => '°F',
+        'KELVIN'                => 'K',
+        'VOLT'                  => 'V',    'KILOVOLT'          => 'kV',
+        'AMPERE'                => 'A',    'MILLIAMPERE'       => 'mA',
+        'DEGREE'                => '°',
+        'DECIBEL'               => 'dB',   'PERCENT'           => '%',
+        'SQUARE_MILLIMETER'     => 'mm²',  'SQUARE_METER'      => 'm²',
+    ];
+    return $map[strtoupper($unit)] ?? strtolower($unit);
+}
+
+/**
+ * Extrahiert einen einzelnen Attributwert aus einem Produkt als [display, raw].
+ * Erkennt Maßattribute (amount/unit), Multi-Select-Arrays und einfache Werte.
+ */
+function extractAttrValue(array $product, string $attrCode): array {
+    $entry = $product['values'][$attrCode][0] ?? null;
+    if (!$entry) return ['display' => '–', 'raw' => null];
+
+    $rawData = $entry['data'];
+
+    // Maßattribut: {"amount": "6.0000", "unit": "MILLIMETER"}
+    if (is_array($rawData) && array_key_exists('amount', $rawData)) {
+        $raw  = (float)$rawData['amount'];
+        $disp = formatAmount((string)$rawData['amount']) . ' ' . unitAbbr($rawData['unit']);
+        return ['display' => $disp, 'raw' => $raw];
+    }
+
+    // Multi-Select: array von Strings
+    if (is_array($rawData)) {
+        return ['display' => implode(', ', $rawData), 'raw' => implode(',', $rawData)];
+    }
+
+    // Zahl mit separatem Unit-Feld (älteres Akeneo-Format)
+    if (is_numeric($rawData)) {
+        $raw  = (float)$rawData;
+        $disp = formatAmount((string)$rawData);
+        $unit = $entry['unit'] ?? '';
+        if ($unit) $disp .= ' ' . unitAbbr($unit);
+        return ['display' => $disp, 'raw' => $raw];
+    }
+
+    return ['display' => (string)$rawData, 'raw' => $rawData];
+}
+
+/**
  * Holt alle Produktfamilien aus Akeneo.
  */
 function getAkeneoFamilies(): array {
