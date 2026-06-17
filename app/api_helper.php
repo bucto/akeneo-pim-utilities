@@ -225,6 +225,31 @@ function extractAttrValue(array $product, string $attrCode): array {
 }
 
 /**
+ * Schulterradius 1V und/oder 2V zu einer Anzeige zusammenfassen.
+ */
+function extractBendingShoulderRadius(array $entity): array {
+    $r1 = extractAttrValue($entity, 'bendingtool_die_1v_shoulder_radius');
+    $r2 = extractAttrValue($entity, 'bendingtool_die_2v_shoulder_radius');
+
+    if ($r1['raw'] !== null && $r2['raw'] !== null) {
+        return [
+            'display' => $r1['display'] . ' / ' . $r2['display'],
+            'raw'     => $r1['raw'] . ',' . $r2['raw'],
+        ];
+    }
+
+    if ($r1['raw'] !== null) {
+        return $r1;
+    }
+
+    if ($r2['raw'] !== null) {
+        return $r2;
+    }
+
+    return extractAttrValueFirst($entity, PIM_BENDING_RADIUS_ATTRS);
+}
+
+/**
  * Holt alle Produktfamilien aus Akeneo.
  */
 function getAkeneoFamilies(): array {
@@ -309,17 +334,21 @@ function getAkeneoProductsByFamilies(array $familyCodes, array $onlyAttrs = []):
  * @param  bool   $rootOnly  Nur Modelle ohne Parent (keine Unter-Modelle)
  * @return array
  */
-function getAkeneoProductModelsByFamilies(array $familyCodes, array $onlyAttrs = [], bool $rootOnly = false): array {
+function getAkeneoProductModelsByFamilies(
+    array $familyCodes,
+    array $onlyAttrs = [],
+    bool $rootOnly = false,
+    array $attributeSearch = []
+): array {
     if (empty($familyCodes)) return [];
 
-    $merged = fetchProductModelsForFamilies($familyCodes, $onlyAttrs, $rootOnly);
+    $merged = fetchProductModelsForFamilies($familyCodes, $onlyAttrs, $rootOnly, $attributeSearch);
     if (!empty($merged)) {
         return $merged;
     }
 
-    // Fallback: pro Familie einzeln (manche Akeneo-Setups mögen kein IN mit vielen Codes)
     foreach ($familyCodes as $familyCode) {
-        $chunk = fetchProductModelsForFamilies([$familyCode], $onlyAttrs, $rootOnly);
+        $chunk = fetchProductModelsForFamilies([$familyCode], $onlyAttrs, $rootOnly, $attributeSearch);
         $merged = array_merge($merged, $chunk);
     }
 
@@ -329,7 +358,12 @@ function getAkeneoProductModelsByFamilies(array $familyCodes, array $onlyAttrs =
 /**
  * Interne Abfrage: Produktmodelle einer oder mehrerer Familien.
  */
-function fetchProductModelsForFamilies(array $familyCodes, array $onlyAttrs, bool $rootOnly): array {
+function fetchProductModelsForFamilies(
+    array $familyCodes,
+    array $onlyAttrs,
+    bool $rootOnly,
+    array $attributeSearch = []
+): array {
     if (empty($familyCodes)) return [];
 
     $accessToken = getAccessToken();
@@ -340,6 +374,15 @@ function fetchProductModelsForFamilies(array $familyCodes, array $onlyAttrs, boo
     $searchParams = ['family' => [['operator' => 'IN', 'value' => array_values($familyCodes)]]];
     if ($rootOnly) {
         $searchParams['parent'] = [['operator' => 'EMPTY']];
+    }
+
+    foreach ($attributeSearch as $attrCode => $criteria) {
+        $searchParams[$attrCode] = [[
+            'operator' => $criteria['operator'] ?? 'CONTAINS',
+            'value'    => $criteria['value'] ?? '',
+            'locale'   => $criteria['locale'] ?? PIM_LOCALE,
+            'scope'    => $criteria['scope'] ?? PIM_CHANNEL,
+        ]];
     }
 
     $searchQuery = urlencode(json_encode($searchParams));
@@ -428,11 +471,12 @@ function getAkeneoProduct(string $identifier, array $onlyAttrs = []): ?array {
 /**
  * Produktmodell-Kette von der Wurzel bis zum direkten Parent (max. 10 Ebenen).
  */
-function getProductModelAncestorChain(string $modelCode): array {
+function getProductModelAncestorChain(string $modelCode, array $onlyAttrs = []): array {
     static $chainCache = [];
 
-    if (isset($chainCache[$modelCode])) {
-        return $chainCache[$modelCode];
+    $cacheKey = $modelCode . '|' . implode(',', $onlyAttrs);
+    if (isset($chainCache[$cacheKey])) {
+        return $chainCache[$cacheKey];
     }
 
     $chain   = [];
@@ -440,7 +484,7 @@ function getProductModelAncestorChain(string $modelCode): array {
     $guard   = 0;
 
     while ($current && $guard < 10) {
-        $model = getAkeneoProductModel($current);
+        $model = getAkeneoProductModel($current, $onlyAttrs);
         if (!$model) {
             break;
         }
@@ -449,8 +493,33 @@ function getProductModelAncestorChain(string $modelCode): array {
         $guard++;
     }
 
-    $chainCache[$modelCode] = $chain;
+    $chainCache[$cacheKey] = $chain;
     return $chain;
+}
+
+/**
+ * Produktmodell inkl. geerbter Werte aus übergeordneten Modell-Ebenen.
+ */
+function enrichProductModelWithAncestors(array $model, array $onlyAttrs = []): array {
+    $entities = [];
+    $parentCode = $model['parent'] ?? null;
+    if ($parentCode) {
+        $entities = getProductModelAncestorChain($parentCode, $onlyAttrs);
+    }
+    $entities[] = $model;
+    $model['values'] = mergeEntityValues($entities);
+
+    if (empty($model['_imageUrl'])) {
+        foreach (array_reverse($entities) as $entity) {
+            $imageUrl = $entity['_imageUrl'] ?? extractProductImageUrl($entity);
+            if ($imageUrl) {
+                $model['_imageUrl'] = $imageUrl;
+                break;
+            }
+        }
+    }
+
+    return $model;
 }
 
 /**
@@ -483,7 +552,7 @@ function getAkeneoProductWithInheritedValues(string $identifier, array $onlyAttr
     $entities = [];
     $parentCode = $product['parent'] ?? null;
     if ($parentCode) {
-        $entities = getProductModelAncestorChain($parentCode);
+        $entities = getProductModelAncestorChain($parentCode, $onlyAttrs);
     }
     $entities[] = $product;
 

@@ -28,7 +28,7 @@ if (empty($products) && getLastApiError()) {
 $variants = array_map(function (array $product): array {
     $enabled = ($product['enabled'] ?? true) !== false;
     $length  = extractAttrValueFirst($product, PIM_BENDING_LENGTH_ATTRS);
-    $radius  = extractAttrValueFirst($product, PIM_BENDING_RADIUS_ATTRS);
+    $radius  = extractBendingShoulderRadius($product);
 
     return [
         'identifier' => $product['identifier'] ?? '',

@@ -29,12 +29,14 @@ define('PIM_LOCALE',  getenv('PIM_LOCALE')  ?: 'de_DE');
 define('PIM_CHANNEL', getenv('PIM_CHANNEL') ?: 'ecommerce');
 
 // --- Abkantwerkzeug-Attribute (kommagetrennte Fallback-Kette) ---
-define('PIM_BENDING_HEIGHT_ATTRS', getenv('PIM_BENDING_HEIGHT_ATTRS') ?: 'bendingtool_tool_height,bendingtool_die_height,bendingtool_height');
-define('PIM_BENDING_RADIUS_ATTRS', getenv('PIM_BENDING_RADIUS_ATTRS') ?: 'bendingtool_die_radius,bendingtool_radius,bendingtool_die_1v_radius');
-define('PIM_BENDING_SERIES_ATTRS', getenv('PIM_BENDING_SERIES_ATTRS') ?: 'series,bendingtool_series');
+define('PIM_BENDING_HEIGHT_ATTRS', getenv('PIM_BENDING_HEIGHT_ATTRS') ?: 'tool_height');
+define('PIM_BENDING_RADIUS_ATTRS', getenv('PIM_BENDING_RADIUS_ATTRS') ?: 'bendingtool_die_1v_shoulder_radius,bendingtool_die_2v_shoulder_radius');
+define('PIM_BENDING_SERIES_ATTRS', getenv('PIM_BENDING_SERIES_ATTRS') ?: 'series_name');
 define('PIM_BENDING_LENGTH_ATTRS', getenv('PIM_BENDING_LENGTH_ATTRS') ?: 'bendingtool_tool_length,bendingtool_length,bendingtool_die_length');
 
 // Werkzeugfinder: kommagetrennte Familien-Codes (leer = DB/Fallback bendingtool_*)
 define('PIM_BENDING_FAMILIES', getenv('PIM_BENDING_FAMILIES') ?: '');
-define('PIM_BENDING_SIZE_ATTRS', getenv('PIM_BENDING_SIZE_ATTRS') ?: 'bendingtool_die_4v_size,bendingtool_die_1v_size');
-define('PIM_BENDING_ANGLE_ATTRS', getenv('PIM_BENDING_ANGLE_ATTRS') ?: 'bendingtool_die_4v_angle,bendingtool_die_1v_angle');
+define('PIM_BENDING_SIZE_ATTRS', getenv('PIM_BENDING_SIZE_ATTRS') ?: 'bendingtool_die_1v_size,bendingtool_die_4v_size');
+define('PIM_BENDING_ANGLE_ATTRS', getenv('PIM_BENDING_ANGLE_ATTRS') ?: 'bendingtool_die_1v_angle,bendingtool_die_4v_angle');
+// Serie-Filter (z. B. afh) — leer = alle Serien
+define('PIM_BENDING_SERIES_FILTER', getenv('PIM_BENDING_SERIES_FILTER') ?: 'afh');

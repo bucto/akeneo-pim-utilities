@@ -4,7 +4,7 @@ include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v7_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v8_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 $loadDebug   = [];
@@ -58,9 +58,45 @@ function modelToRow(array $model, array $familyLabels): array {
         'size'        => extractAttrValueFirst($model, PIM_BENDING_SIZE_ATTRS),
         'angle'       => extractAttrValueFirst($model, PIM_BENDING_ANGLE_ATTRS),
         'height'      => extractAttrValueFirst($model, PIM_BENDING_HEIGHT_ATTRS),
-        'radius'      => extractAttrValueFirst($model, PIM_BENDING_RADIUS_ATTRS),
+        'radius'      => extractBendingShoulderRadius($model),
         'series'      => extractAttrValueFirst($model, PIM_BENDING_SERIES_ATTRS),
     ];
+}
+
+function bendingSeriesAttributeSearch(): array {
+    $filter = trim(PIM_BENDING_SERIES_FILTER);
+    if ($filter === '') {
+        return [];
+    }
+
+    $seriesAttr = trim(explode(',', PIM_BENDING_SERIES_ATTRS)[0]);
+    if ($seriesAttr === '') {
+        return [];
+    }
+
+    return [
+        $seriesAttr => [
+            'operator' => 'CONTAINS',
+            'value'    => $filter,
+        ],
+    ];
+}
+
+function matchesSeriesFilter(array $row): bool {
+    $filter = trim(PIM_BENDING_SERIES_FILTER);
+    if ($filter === '') {
+        return true;
+    }
+
+    $needle = strtolower($filter);
+    foreach (['raw', 'display'] as $key) {
+        $val = strtolower((string)($row['series'][$key] ?? ''));
+        if ($val !== '' && str_contains($val, $needle)) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function loadBendingToolData(): array {
@@ -86,7 +122,8 @@ function loadBendingToolData(): array {
     $extraAttrs = array_merge(
         array_map('trim', explode(',', PIM_BENDING_HEIGHT_ATTRS)),
         array_map('trim', explode(',', PIM_BENDING_RADIUS_ATTRS)),
-        array_map('trim', explode(',', PIM_BENDING_SERIES_ATTRS))
+        array_map('trim', explode(',', PIM_BENDING_SERIES_ATTRS)),
+        ['bendingtool_die_1v_shoulder_radius', 'bendingtool_die_2v_shoulder_radius']
     );
     $onlyAttrs = array_values(array_unique(array_merge($filterAttrs, $extraAttrs, $imageAttrs)));
 
@@ -96,37 +133,66 @@ function loadBendingToolData(): array {
         $familyLabels[$f['code']] = $f['labels']['de_DE'] ?? $f['code'];
     }
 
-    // 1) Produktmodelle — zuerst ohne Attribut-Filter (robuster), dann mit Attributen
-    $allModels = getAkeneoProductModelsByFamilies($familyCodes, [], false);
-    $loadDebug['api_error'] = getLastApiError();
+    $seriesSearch = bendingSeriesAttributeSearch();
+    $loadDebug['series_filter'] = trim(PIM_BENDING_SERIES_FILTER) ?: null;
+    if (!empty($seriesSearch)) {
+        $loadDebug['series_search'] = $seriesSearch;
+    }
 
-    if (empty($allModels)) {
-        $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
+    // 1) Produktmodelle — mit Serie-Filter direkt per API (schneller), sonst robust ohne Attribute zuerst
+    if (!empty($seriesSearch)) {
+        $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false, $seriesSearch);
         $loadDebug['api_error'] = getLastApiError();
+        $loadDebug['source'] = 'product-models-series-filter';
+    } else {
+        $allModels = getAkeneoProductModelsByFamilies($familyCodes, [], false);
+        $loadDebug['api_error'] = getLastApiError();
+
+        if (empty($allModels)) {
+            $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
+            $loadDebug['api_error'] = getLastApiError();
+        }
+        $loadDebug['source'] = 'product-models';
     }
 
     $loadDebug['product_models_total'] = count($allModels);
 
     $models = filterLeafProductModels($allModels);
     $loadDebug['product_models_leaf'] = count($models);
-    $loadDebug['source'] = 'product-models';
+    if (empty($loadDebug['source'])) {
+        $loadDebug['source'] = 'product-models';
+    }
 
     // Blatt-Filter zu aggressiv → alle Modelle nutzen
     if (empty($models) && !empty($allModels)) {
         $models = $allModels;
-        $loadDebug['source'] = 'product-models-all';
+        $loadDebug['source'] .= '-all';
     }
 
     // 2) Fallback: Root-Modelle
     if (empty($models)) {
-        $models = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, true);
+        $models = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, true, $seriesSearch);
         $loadDebug['product_models_root'] = count($models);
         if (!empty($models)) {
             $loadDebug['source'] = 'product-models-root';
         }
     }
 
-    // 3) Fallback: Parent-Codes aus Produkten (nur wenn Modell-API leer — kein Massen-Index)
+    // 3) Fallback ohne Serie-API-Filter (Serie wird nach Anreicherung clientseitig gefiltert)
+    if (empty($models) && !empty($seriesSearch)) {
+        $allModels = getAkeneoProductModelsByFamilies($familyCodes, $onlyAttrs, false);
+        $loadDebug['api_error'] = getLastApiError();
+        $loadDebug['product_models_total_fallback'] = count($allModels);
+        $models = filterLeafProductModels($allModels);
+        if (empty($models) && !empty($allModels)) {
+            $models = $allModels;
+        }
+        if (!empty($models)) {
+            $loadDebug['source'] = 'product-models-fallback-no-series-search';
+        }
+    }
+
+    // 4) Fallback: Parent-Codes aus Produkten (nur wenn Modell-API leer — kein Massen-Index)
     if (empty($models)) {
         $products = getAkeneoProductsByFamilies($familyCodes, $onlyAttrs);
         $loadDebug['products_total'] = count($products);
@@ -145,7 +211,7 @@ function loadBendingToolData(): array {
         foreach (array_keys($parentCodes) as $parentCode) {
             $model = getAkeneoProductModel($parentCode, $onlyAttrs);
             if ($model) {
-                $models[] = $model;
+                $models[] = enrichProductModelWithAncestors($model, $onlyAttrs);
             }
         }
 
@@ -162,7 +228,14 @@ function loadBendingToolData(): array {
         return [];
     }
 
+    $models = array_map(
+        fn($m) => enrichProductModelWithAncestors($m, $onlyAttrs),
+        $models
+    );
+
     $rows = array_map(fn($m) => modelToRow($m, $familyLabels), $models);
+    $rows = array_values(array_filter($rows, 'matchesSeriesFilter'));
+    $loadDebug['rows_after_series_filter'] = count($rows);
     usort($rows, fn($a, $b) => strcasecmp($a['name'], $b['name']));
 
     return $rows;
@@ -539,6 +612,10 @@ $colCount = 8;
 <p class="page-hint">
     Es werden <strong>Produktmodelle</strong> angezeigt — klicken Sie auf ein Modell, um alle zugehörigen Artikel
     mit den jeweiligen Werkzeuglängen anzuzeigen. Filtern Sie nach V-Öffnung, Winkel, Werkzeughöhe, Radius und Serie.
+    <?php if (trim(PIM_BENDING_SERIES_FILTER) !== ''): ?>
+        Aktuell nur Serie <strong><?php echo htmlspecialchars(trim(PIM_BENDING_SERIES_FILTER)); ?></strong>
+        (über <code>PIM_BENDING_SERIES_FILTER</code>).
+    <?php endif; ?>
 </p>
 
 <?php if (empty($rows) && isAdminEnabled() && !empty($loadDebug)): ?>
@@ -559,6 +636,10 @@ $colCount = 8;
     Parent-Codes: <?php echo (int)($loadDebug['unique_parents'] ?? 0); ?>
     <?php if (!empty($loadDebug['source'])): ?>
         <br>Quelle: <code><?php echo htmlspecialchars($loadDebug['source']); ?></code>
+    <?php endif; ?>
+    <?php if (!empty($loadDebug['series_filter'])): ?>
+        <br>Serie-Filter: <code><?php echo htmlspecialchars($loadDebug['series_filter']); ?></code>
+        — Zeilen nach Filter: <?php echo (int)($loadDebug['rows_after_series_filter'] ?? 0); ?>
     <?php endif; ?>
     <?php if (!empty($loadDebug['api_error'])): ?>
         <br>API-Fehler: <code><?php echo htmlspecialchars($loadDebug['api_error']); ?></code>
