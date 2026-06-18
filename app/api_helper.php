@@ -1175,47 +1175,7 @@ function getVisibleProductIdentifiers(array $productsByStatus, string $filterSta
 }
 
 /**
- * Optionale familienspezifische Vergleichs-Vorschläge aus app/data/compare_presets.json.
- *
- * @return array<int, array{label: string, skus: string[]}>
- */
-function loadFamilyComparePresets(string $familyCode): array {
-    static $config = null;
-    if ($config === null) {
-        $path = __DIR__ . '/data/compare_presets.json';
-        if (!is_readable($path)) {
-            $config = [];
-        } else {
-            $decoded = json_decode((string)file_get_contents($path), true);
-            $config  = is_array($decoded) ? $decoded : [];
-        }
-    }
-
-    $entries = $config['families'][$familyCode] ?? [];
-    if (!is_array($entries)) {
-        return [];
-    }
-
-    $presets = [];
-    foreach ($entries as $entry) {
-        if (!is_array($entry) || empty($entry['label']) || empty($entry['skus']) || !is_array($entry['skus'])) {
-            continue;
-        }
-        $skus = array_values(array_filter(array_map('strval', $entry['skus'])));
-        if (count($skus) < 2) {
-            continue;
-        }
-        $presets[] = [
-            'label' => (string)$entry['label'],
-            'skus'  => $skus,
-        ];
-    }
-
-    return $presets;
-}
-
-/**
- * Vorgefertigte Vergleichs-Vorschläge für eine Familie (JSON + automatisch).
+ * Vorgefertigte Vergleichs-Vorschläge für eine Familie (automatisch aus Produktliste).
  *
  * @return array<int, array{id: string, label: string, skus: string[], kind: string}>
  */
@@ -1224,24 +1184,7 @@ function buildCompareSuggestionPresets(string $familyCode, array $identifiers): 
         return [];
     }
 
-    $available = array_flip($identifiers);
-    $presets   = [];
-
-    foreach (loadFamilyComparePresets($familyCode) as $custom) {
-        $skus = array_values(array_filter(
-            $custom['skus'],
-            fn($sku) => isset($available[$sku])
-        ));
-        if (count($skus) < 2) {
-            continue;
-        }
-        $presets[] = [
-            'id'    => 'custom_' . substr(md5($custom['label'] . implode(',', $skus)), 0, 8),
-            'label' => $custom['label'],
-            'skus'  => $skus,
-            'kind'  => 'custom',
-        ];
-    }
+    $presets = [];
 
     $autoDefs = [
         ['id' => 'latest_2', 'label' => 'Neueste 2 Maschinen', 'count' => 2],

@@ -147,3 +147,131 @@ function upsertFamilyConfig(
         // Fehler stillschweigend ignorieren, Seite bleibt funktionsfähig
     }
 }
+
+/**
+ * Schnellauswahl-Links für den Produkt-Vergleich (eine Familie).
+ *
+ * @return array<int, array{id: int, name: string, url: string, family_code: string, sort_order: int}>
+ */
+function getCompareLinksForFamily(string $familyCode): array {
+    $pdo = getDbConnection();
+    if (!$pdo || $familyCode === '') {
+        return [];
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT id, name, url, family_code, sort_order
+             FROM pim_compare_links
+             WHERE family_code = :family
+             ORDER BY sort_order, name, id'
+        );
+        $stmt->execute([':family' => $familyCode]);
+        return $stmt->fetchAll();
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
+/**
+ * Alle Schnellauswahl-Links (Admin).
+ */
+function getAllCompareLinks(): array {
+    $pdo = getDbConnection();
+    if (!$pdo) {
+        return [];
+    }
+
+    try {
+        $stmt = $pdo->query(
+            'SELECT id, name, url, family_code, sort_order, updated_at
+             FROM pim_compare_links
+             ORDER BY family_code, sort_order, name, id'
+        );
+        return $stmt->fetchAll();
+    } catch (PDOException $e) {
+        return [];
+    }
+}
+
+function getCompareLinkById(int $id): ?array {
+    $pdo = getDbConnection();
+    if (!$pdo || $id <= 0) {
+        return null;
+    }
+
+    try {
+        $stmt = $pdo->prepare(
+            'SELECT id, name, url, family_code, sort_order
+             FROM pim_compare_links WHERE id = :id LIMIT 1'
+        );
+        $stmt->execute([':id' => $id]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    } catch (PDOException $e) {
+        return null;
+    }
+}
+
+function saveCompareLink(?int $id, string $name, string $url, string $familyCode, int $sortOrder = 0): bool {
+    $pdo = getDbConnection();
+    if (!$pdo) {
+        return false;
+    }
+
+    $name        = trim($name);
+    $url         = trim($url);
+    $familyCode  = trim($familyCode);
+    $sortOrder   = max(0, $sortOrder);
+
+    if ($name === '' || $url === '' || $familyCode === '') {
+        return false;
+    }
+
+    try {
+        if ($id !== null && $id > 0) {
+            $stmt = $pdo->prepare(
+                'UPDATE pim_compare_links
+                 SET name = :name, url = :url, family_code = :family, sort_order = :sort
+                 WHERE id = :id'
+            );
+            $stmt->execute([
+                ':name'   => $name,
+                ':url'    => $url,
+                ':family' => $familyCode,
+                ':sort'   => $sortOrder,
+                ':id'     => $id,
+            ]);
+            return $stmt->rowCount() > 0;
+        }
+
+        $stmt = $pdo->prepare(
+            'INSERT INTO pim_compare_links (name, url, family_code, sort_order)
+             VALUES (:name, :url, :family, :sort)'
+        );
+        $stmt->execute([
+            ':name'   => $name,
+            ':url'    => $url,
+            ':family' => $familyCode,
+            ':sort'   => $sortOrder,
+        ]);
+        return true;
+    } catch (PDOException $e) {
+        return false;
+    }
+}
+
+function deleteCompareLink(int $id): bool {
+    $pdo = getDbConnection();
+    if (!$pdo || $id <= 0) {
+        return false;
+    }
+
+    try {
+        $stmt = $pdo->prepare('DELETE FROM pim_compare_links WHERE id = :id');
+        $stmt->execute([':id' => $id]);
+        return $stmt->rowCount() > 0;
+    } catch (PDOException $e) {
+        return false;
+    }
+}

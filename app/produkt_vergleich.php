@@ -38,6 +38,7 @@ $tabFamilies = filterFamiliesForTab($allFamilies, $activeTab, $hasConfig);
 // --- Produkte laden wenn Familie gewählt ---
 $products           = [];
 $comparePresets      = [];
+$compareLinks        = [];
 $visibleIdentifiers  = [];
 if ($selectedFamily) {
     $products = getAkeneoProductsByFamily($selectedFamily);
@@ -49,7 +50,10 @@ if ($selectedFamily) {
 
     $visibleIdentifiers = getVisibleProductIdentifiers($products, $filterStatus);
     $comparePresets     = buildCompareSuggestionPresets($selectedFamily, $visibleIdentifiers);
+    $compareLinks       = getCompareLinksForFamily($selectedFamily);
 }
+
+$hasSuggestions = !empty($comparePresets) || !empty($compareLinks);
 
 // --- Hilfsfunktion: Tab-URL ---
 function tabUrl(string $tab, ?string $family = null, string $status = 'active'): string {
@@ -444,10 +448,22 @@ $tabs = [
             border-color: #fed7d7;
             color: #9b2c2c;
         }
-        .suggestion-link.ausstattung:hover {
-            background: #fff5f5;
+        .suggestion-link-db {
+            display: inline-block;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 5px;
+            text-decoration: none;
+            background: var(--dark-gray);
+            color: #fff;
+            border: 1px solid var(--dark-gray);
+            transition: background 0.15s;
         }
-    </style>
+        .suggestion-link-db:hover {
+            background: #1a202c;
+            color: #fff;
+        }
 </head>
 <body>
 
@@ -520,7 +536,7 @@ $tabs = [
             <!-- Schritt 2: Produkte auswählen -->
             <div class="section-title-row">
                 <p class="section-title">Schritt 2: Produkte auswählen</p>
-                <?php if (!empty($comparePresets)): ?>
+                <?php if ($hasSuggestions): ?>
                     <button type="button"
                             class="help-toggle"
                             id="suggestionHelpToggle"
@@ -530,13 +546,36 @@ $tabs = [
                 <?php endif; ?>
             </div>
 
-            <?php if (!empty($comparePresets)): ?>
+            <?php if ($hasSuggestions): ?>
                 <div class="suggestion-panel" id="suggestionPanel" role="region" aria-label="Schnellauswahl">
                     <p class="suggestion-intro">
                         Nicht sicher, welche Maschinen Sie ankreuzen sollen? Nutzen Sie eine der Vorschläge —
-                        per Klick werden die passenden Maschinen ausgewählt oder der Vergleich direkt geöffnet.
+                        per Klick werden passende Maschinen ausgewählt, ein Vergleich geöffnet oder ein vorgefertigter Link aufgerufen.
                     </p>
 
+                    <?php if (!empty($compareLinks)): ?>
+                        <div class="suggestion-group">
+                            <p class="suggestion-group-title">Vorgefertigte Links</p>
+                            <div class="suggestion-list">
+                                <?php foreach ($compareLinks as $link): ?>
+                                    <div class="suggestion-item">
+                                        <div class="suggestion-meta">
+                                            <span class="suggestion-label"><?php echo htmlspecialchars($link['name']); ?></span>
+                                            <span class="suggestion-skus"><?php echo htmlspecialchars($link['url']); ?></span>
+                                        </div>
+                                        <div class="suggestion-actions">
+                                            <a class="suggestion-link-db"
+                                               href="<?php echo htmlspecialchars($link['url']); ?>">
+                                                Öffnen →
+                                            </a>
+                                        </div>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if (!empty($comparePresets)): ?>
                     <div class="suggestion-group">
                         <p class="suggestion-group-title">Maschinen auswählen</p>
                         <div class="suggestion-list">
@@ -585,6 +624,7 @@ $tabs = [
                             <?php endforeach; ?>
                         </div>
                     </div>
+                    <?php endif; ?>
                 </div>
             <?php endif; ?>
 

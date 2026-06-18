@@ -369,6 +369,10 @@ function renderSiteHeader(?string $active = null): void {
                    class="nav-link admin <?php echo $active === 'admin' ? 'active' : ''; ?>">
                     Admin
                 </a>
+                <a href="compare_links_settings.php"
+                   class="nav-link admin <?php echo $active === 'admin-links' ? 'active' : ''; ?>">
+                    Vergleichs-Links
+                </a>
             <?php endif; ?>
         </nav>
     </header>

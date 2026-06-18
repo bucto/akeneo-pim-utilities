@@ -118,7 +118,9 @@
 
     <?php if (isAdminEnabled()): ?>
     <div class="admin-footer">
-        <a href="pim_family_settings.php">Admin: PIM-Familien konfigurieren</a>
+        <a href="pim_family_settings.php">Admin: PIM-Familien</a>
+        &nbsp;·&nbsp;
+        <a href="compare_links_settings.php">Vergleichs-Links</a>
     </div>
     <?php endif; ?>
 </div>
