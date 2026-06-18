@@ -464,6 +464,10 @@ $tabs = [
             background: #1a202c;
             color: #fff;
         }
+        .suggestion-link.ausstattung:hover {
+            background: #fff5f5;
+        }
+    </style>
 </head>
 <body>
 
