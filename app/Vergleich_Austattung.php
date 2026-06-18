@@ -193,6 +193,8 @@
     $linkedProductNames = getArticleNamesForProducts($linkedProducts);
     $linkedModelNames   = getArticleNamesForProductModels($linkedModels);
 
+    $skus = sortSkusByBuildYearDesc($skus, $seriesBuildInfo);
+
     if (!empty($allAssocTypes)) {
         echo '<table>';
 

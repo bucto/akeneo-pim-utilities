@@ -221,6 +221,8 @@
         }
     }
 
+    $skus = sortSkusByBuildYearDesc($skus, $seriesBuildInfo);
+
     echo '<table>';
 
     // Header-Zeile mit Produktbildern

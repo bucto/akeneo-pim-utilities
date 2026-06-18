@@ -547,6 +547,48 @@ function getSeriesBuildInfoForProduct(array $product): array {
     return $empty;
 }
 
+/** Baujahr (raw) eines Produkts über die Serien-Kategorie. */
+function getProductBuildYearRaw(array $product): ?float {
+    $raw = getSeriesBuildInfoForProduct($product)['buildYear']['raw'] ?? null;
+    return ($raw !== null && $raw !== '') ? (float)$raw : null;
+}
+
+function compareBuildYearDesc(?float $yearA, ?float $yearB, string $fallbackA = '', string $fallbackB = ''): int {
+    if ($yearA !== null && $yearB !== null) {
+        return $yearB <=> $yearA;
+    }
+    if ($yearA !== null) {
+        return -1;
+    }
+    if ($yearB !== null) {
+        return 1;
+    }
+    return strcasecmp($fallbackA, $fallbackB);
+}
+
+/** Produkte nach Baujahr absteigend (ohne Baujahr ans Ende). */
+function sortProductsByBuildYearDesc(array $products): array {
+    usort($products, fn($a, $b) => compareBuildYearDesc(
+        getProductBuildYearRaw($a),
+        getProductBuildYearRaw($b),
+        $a['identifier'] ?? '',
+        $b['identifier'] ?? ''
+    ));
+    return $products;
+}
+
+/** SKU-Liste für Vergleichstabellen nach Baujahr absteigend ordnen. */
+function sortSkusByBuildYearDesc(array $skus, array $seriesBuildInfo): array {
+    usort($skus, function ($a, $b) use ($seriesBuildInfo) {
+        $rawA = $seriesBuildInfo[$a]['buildYear']['raw'] ?? null;
+        $rawB = $seriesBuildInfo[$b]['buildYear']['raw'] ?? null;
+        $yearA = ($rawA !== null && $rawA !== '') ? (float)$rawA : null;
+        $yearB = ($rawB !== null && $rawB !== '') ? (float)$rawB : null;
+        return compareBuildYearDesc($yearA, $yearB, $a, $b);
+    });
+    return $skus;
+}
+
 /**
  * Holt Produkte aus MEHREREN Familien in einem einzigen paginierten API-Call.
  * Lädt optional nur die angegebenen Attribute (drastisch kürzere Antworten).
@@ -886,11 +928,30 @@ function extractLocalizedAttr(array $entity, string $attrCode, ?string $locale =
 }
 
 /**
+ * Lokalisierten Attributwert inkl. Option-Label (z. B. Select artikelname) zurückgeben.
+ */
+function resolveLocalizedAttrDisplay(array $entity, string $attrCode, ?string $locale = null): ?string {
+    $raw = extractLocalizedAttr($entity, $attrCode, $locale);
+    if ($raw === null || $raw === '') {
+        return null;
+    }
+
+    static $optionCache = [];
+    if (!isset($optionCache[$attrCode])) {
+        $optionCache[$attrCode] = getAkeneoAttributeOptionLabels($attrCode);
+    }
+
+    return $optionCache[$attrCode][$raw] ?? $raw;
+}
+
+/**
  * Artikelname (de) — Fallback auf product_name.
  */
 function extractArticleName(array $entity, ?string $locale = null): ?string {
-    return extractLocalizedAttr($entity, PIM_ARTICLE_NAME_ATTR, $locale)
-        ?? extractProductName($entity, $locale ?? PIM_LOCALE);
+    $locale = $locale ?? PIM_LOCALE;
+
+    return resolveLocalizedAttrDisplay($entity, PIM_ARTICLE_NAME_ATTR, $locale)
+        ?? extractProductName($entity, $locale);
 }
 
 /**
@@ -956,8 +1017,8 @@ function getAkeneoProductsByFamily(string $familyCode): array {
         }
     }
 
-    usort($activeProducts,   fn($a, $b) => strcasecmp($a['identifier'], $b['identifier']));
-    usort($disabledProducts, fn($a, $b) => strcasecmp($a['identifier'], $b['identifier']));
+    $activeProducts   = sortProductsByBuildYearDesc($activeProducts);
+    $disabledProducts = sortProductsByBuildYearDesc($disabledProducts);
 
     return ['active' => $activeProducts, 'disabled' => $disabledProducts];
 }
