@@ -238,6 +238,37 @@ function getAkeneoAttributeOptionLabels(string $attrCode): array {
 }
 
 /**
+ * Option-Code in Anzeigename auflösen (mehrere Attribute probieren).
+ */
+function resolveOptionCodeLabel(string $optionCode, ?array $attrCodes = null): ?string {
+    if ($optionCode === '') {
+        return null;
+    }
+
+    $attrCodes = $attrCodes ?? array_values(array_unique(array_filter([
+        PIM_ARTICLE_NAME_ATTR,
+        'product_name',
+    ])));
+
+    static $optionCache = [];
+    foreach ($attrCodes as $attrCode) {
+        if (!isset($optionCache[$attrCode])) {
+            $optionCache[$attrCode] = getAkeneoAttributeOptionLabels($attrCode);
+        }
+        $label = $optionCache[$attrCode][$optionCode] ?? null;
+        if ($label !== null && $label !== '' && $label !== $optionCode) {
+            return $label;
+        }
+    }
+
+    return null;
+}
+
+function looksLikeProductNameOptionCode(string $value): bool {
+    return str_starts_with($value, 'product_name_');
+}
+
+/**
  * Ersetzt Option-Codes in [display, raw] durch übersetzte Labels (raw bleibt der Code).
  */
 function applyOptionLabels(array $value, array $optionLabels): array {
@@ -936,45 +967,59 @@ function resolveLocalizedAttrDisplay(array $entity, string $attrCode, ?string $l
         return null;
     }
 
-    static $optionCache = [];
-    if (!isset($optionCache[$attrCode])) {
-        $optionCache[$attrCode] = getAkeneoAttributeOptionLabels($attrCode);
+    if (!looksLikeProductNameOptionCode($raw)) {
+        return $raw;
     }
 
-    return $optionCache[$attrCode][$raw] ?? $raw;
+    return resolveOptionCodeLabel($raw, [$attrCode, 'product_name']) ?? $raw;
 }
 
 /**
  * Artikelname (de) — Fallback auf product_name.
  */
 function extractArticleName(array $entity, ?string $locale = null): ?string {
-    $locale = $locale ?? PIM_LOCALE;
+    $locale     = $locale ?? PIM_LOCALE;
+    $fallbackId = $entity['identifier'] ?? $entity['code'] ?? null;
 
-    return resolveLocalizedAttrDisplay($entity, PIM_ARTICLE_NAME_ATTR, $locale)
-        ?? extractProductName($entity, $locale);
+    $articleRaw = extractLocalizedAttr($entity, PIM_ARTICLE_NAME_ATTR, $locale);
+    if ($articleRaw !== null && !looksLikeProductNameOptionCode($articleRaw)) {
+        return $articleRaw;
+    }
+
+    if ($articleRaw !== null) {
+        $label = resolveOptionCodeLabel($articleRaw);
+        if ($label !== null) {
+            return $label;
+        }
+    }
+
+    $productName = extractProductName($entity, $locale);
+    if ($productName !== null && $productName !== '' && !looksLikeProductNameOptionCode($productName)) {
+        return $productName;
+    }
+
+    if ($fallbackId !== null && $fallbackId !== '') {
+        return $fallbackId;
+    }
+
+    return $articleRaw ?? $productName;
 }
 
 /**
  * Deutsche Produktbezeichnung aus values extrahieren.
  */
-function extractProductName(array $entity, string $locale = 'de_DE'): ?string {
-    $entries = $entity['values']['product_name'] ?? [];
-    if (empty($entries)) {
+function extractProductName(array $entity, ?string $locale = null): ?string {
+    $locale = $locale ?? PIM_LOCALE;
+    $raw    = extractLocalizedAttr($entity, 'product_name', $locale);
+    if ($raw === null || $raw === '') {
         return null;
     }
 
-    $entry = pickValueEntry($entries);
-    if ($entry && is_string($entry['data'] ?? null)) {
-        return $entry['data'];
+    if (looksLikeProductNameOptionCode($raw)) {
+        return resolveOptionCodeLabel($raw, ['product_name', PIM_ARTICLE_NAME_ATTR]) ?? $raw;
     }
 
-    foreach ($entries as $val) {
-        if (($val['locale'] ?? null) === $locale && is_string($val['data'] ?? null)) {
-            return $val['data'];
-        }
-    }
-
-    return null;
+    return $raw;
 }
 
 /**
