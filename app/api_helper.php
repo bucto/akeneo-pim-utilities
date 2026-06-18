@@ -78,6 +78,11 @@ function apiGet(string $url, string $accessToken): ?array {
     return $response;
 }
 
+/** Setzt die letzte API-Fehlermeldung zurück (vor erneutem Versuch). */
+function clearLastApiError(): void {
+    unset($GLOBALS['_akeneo_last_api_error']);
+}
+
 /** Letzte API-Fehlermeldung (für Admin-Diagnose). */
 function getLastApiError(): ?string {
     return $GLOBALS['_akeneo_last_api_error'] ?? null;
@@ -779,6 +784,26 @@ function getAkeneoProductModel(string $code, array $onlyAttrs = []): ?array {
 }
 
 /**
+ * Familien-Code eines Produktmodells (ggf. vom Parent übernehmen).
+ */
+function resolveProductModelFamilyCode(array $model): string {
+    $family = trim((string)($model['family'] ?? ''));
+    if ($family !== '') {
+        return $family;
+    }
+
+    $parentCode = $model['parent'] ?? null;
+    if ($parentCode) {
+        $parent = getAkeneoProductModel($parentCode, []);
+        if ($parent) {
+            return resolveProductModelFamilyCode($parent);
+        }
+    }
+
+    return '';
+}
+
+/**
  * Einzelnes Produkt per SKU/Identifier laden (Kanal + Locale).
  */
 function getAkeneoProduct(string $identifier, array $onlyAttrs = []): ?array {
@@ -1100,14 +1125,22 @@ function sortBendingVariantProducts(array $products): array {
 /**
  * Interne paginierte Abfrage: Produkte zu einem Parent-Modell.
  */
-function fetchProductsByParent(string $parentCode, array $onlyAttrs = []): array {
-    $accessToken  = getAccessToken();
-    $allProducts  = [];
-    $page         = 1;
-    $limit        = 100;
-    $searchParams = ['parent' => [['operator' => '=', 'value' => $parentCode]]];
-    $searchQuery  = urlencode(json_encode($searchParams));
-    $attrsParam   = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
+function fetchProductsByParentSearch(string $parentCode, string $operator, array $onlyAttrs = []): array {
+    $accessToken = getAccessToken();
+    clearLastApiError();
+
+    $allProducts = [];
+    $page        = 1;
+    $limit       = 100;
+
+    if ($operator === 'IN') {
+        $searchParams = ['parent' => [['operator' => 'IN', 'value' => [$parentCode]]]];
+    } else {
+        $searchParams = ['parent' => [['operator' => '=', 'value' => $parentCode]]];
+    }
+
+    $searchQuery = urlencode(json_encode($searchParams));
+    $attrsParam  = empty($onlyAttrs) ? '' : ('&attributes=' . urlencode(implode(',', $onlyAttrs)));
 
     while (true) {
         $url      = API_BASE_URL . "/products?search={$searchQuery}&page={$page}&limit={$limit}"
@@ -1132,6 +1165,41 @@ function fetchProductsByParent(string $parentCode, array $onlyAttrs = []): array
     }
 
     return $allProducts;
+}
+
+/**
+ * Fallback: Produkte der Modell-Familie laden und nach parent filtern.
+ */
+function fetchProductsByParentFromFamily(string $parentCode, array $onlyAttrs = []): array {
+    $model = getAkeneoProductModel($parentCode, []);
+    if (!$model) {
+        return [];
+    }
+
+    $familyCode = resolveProductModelFamilyCode($model);
+    if ($familyCode === '') {
+        return [];
+    }
+
+    clearLastApiError();
+    $candidates = getAkeneoProductsByFamilies([$familyCode], $onlyAttrs);
+
+    return array_values(array_filter(
+        $candidates,
+        fn(array $product) => ($product['parent'] ?? '') === $parentCode
+    ));
+}
+
+function fetchProductsByParent(string $parentCode, array $onlyAttrs = []): array {
+    $products = fetchProductsByParentSearch($parentCode, 'IN', $onlyAttrs);
+    if (empty($products) && getLastApiError()) {
+        $products = fetchProductsByParentSearch($parentCode, '=', $onlyAttrs);
+    }
+    if (empty($products) && getLastApiError()) {
+        $products = fetchProductsByParentFromFamily($parentCode, $onlyAttrs);
+    }
+
+    return $products;
 }
 
 /**

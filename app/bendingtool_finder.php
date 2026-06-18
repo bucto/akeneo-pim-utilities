@@ -4,7 +4,7 @@ include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v9_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v10_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 $loadDebug   = [];
@@ -46,7 +46,7 @@ function getBendingToolFamilies(): array {
 }
 
 function modelToRow(array $model, array $familyLabels, array $heightOptions, array $seriesOptions): array {
-    $fc   = $model['family'] ?? '';
+    $fc   = resolveProductModelFamilyCode($model);
     $code = $model['code'] ?? '';
 
     return [
@@ -318,15 +318,32 @@ function collectUniqueFamilies(array $rows): array {
     return ['values' => $values, 'labels' => $labels];
 }
 
-$familyFilterData = collectUniqueFamilies($rows);
+$bendingToolFamilies = getBendingToolFamilies();
+$familyLabelsFilter  = getAkeneoFamilyLabelMap();
+$uniqueFamilies      = array_column($bendingToolFamilies, 'code');
+foreach ($uniqueFamilies as $code) {
+    if (!isset($familyLabelsFilter[$code])) {
+        $familyLabelsFilter[$code] = $code;
+    }
+}
+usort($uniqueFamilies, fn($a, $b) => strcasecmp(
+    $familyLabelsFilter[$a] ?? $a,
+    $familyLabelsFilter[$b] ?? $b
+));
+
+$rowFamilyFilter = collectUniqueFamilies($rows);
+foreach ($rowFamilyFilter['values'] as $code) {
+    if (!in_array($code, $uniqueFamilies, true)) {
+        $uniqueFamilies[] = $code;
+        $familyLabelsFilter[$code] = $rowFamilyFilter['labels'][$code] ?? $code;
+    }
+}
+
 $sizeFilter   = collectUniqueFilterValues($rows, 'size', true);
 $angleFilter  = collectUniqueFilterValues($rows, 'angle', true);
 $heightFilter = collectUniqueFilterValues($rows, 'height', true);
 $radiusFilter = collectUniqueFilterValues($rows, 'radius', true);
 $seriesFilter = collectUniqueFilterValues($rows, 'series', false);
-
-$uniqueFamilies = $familyFilterData['values'];
-$familyLabelsFilter = $familyFilterData['labels'];
 
 $uniqueSizes   = $sizeFilter['values'];
 $uniqueAngles  = $angleFilter['values'];
