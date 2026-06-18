@@ -51,7 +51,7 @@
             text-align: left;
         }
         th {
-            background-color: #2d3748;
+            background-color: var(--table-head-bg);
             color: white;
             font-weight: 600;
             vertical-align: top;
@@ -101,10 +101,13 @@
             font-size: 26px;
             color: #cbd5e0;
         }
-        .sku-label {
-            font-size: 13px;
+        .article-name-label {
+            font-size: 14px;
+            font-weight: 600;
             text-align: center;
             display: block;
+            margin-top: 4px;
+            line-height: 1.3;
         }
     </style>
 </head>
@@ -124,54 +127,6 @@
         return apiGet("$baseUrl/products/" . urlencode($sku), $accessToken);
     }
 
-    /**
-     * Holt deutsche Labels aller Assoziationstypen.
-     * Gibt [code => label] zurück.
-     */
-    function getAssociationTypeLabels(string $baseUrl, string $accessToken): array {
-        $labels = [];
-        $page   = 1;
-        while (true) {
-            $resp = apiGet("$baseUrl/association-types?limit=100&page=$page", $accessToken);
-            foreach ($resp['_embedded']['items'] ?? [] as $item) {
-                $labels[$item['code']] = $item['labels']['de_DE'] ?? $item['code'];
-            }
-            if (!isset($resp['_links']['next']) || count($resp['_embedded']['items'] ?? []) < 100) break;
-            $page++;
-        }
-        return $labels;
-    }
-
-    /**
-     * Holt deutsche Produktnamen für eine Liste von SKUs per Batch-Request.
-     * Gibt [identifier => name] zurück. Fallback: identifier selbst.
-     */
-    function getProductNames(string $baseUrl, string $accessToken, array $identifiers): array {
-        if (empty($identifiers)) return [];
-
-        $names   = [];
-        $chunks  = array_chunk(array_unique($identifiers), 100);
-
-        foreach ($chunks as $chunk) {
-            $search = json_encode(['identifier' => [['operator' => 'IN', 'value' => $chunk]]]);
-            $resp   = apiGet("$baseUrl/products?search=" . urlencode($search) . "&limit=100", $accessToken);
-
-            foreach ($resp['_embedded']['items'] ?? [] as $product) {
-                $ident = $product['identifier'];
-                $name  = null;
-
-                // product_name mit de_DE bevorzugen, dann ohne Locale
-                foreach ($product['values']['product_name'] ?? [] as $val) {
-                    if ($val['locale'] === 'de_DE') { $name = $val['data']; break; }
-                    if ($val['locale'] === null && $name === null) { $name = $val['data']; }
-                }
-                $names[$ident] = $name ?? $ident;
-            }
-        }
-
-        return $names;
-    }
-
     if (!isset($_GET['skus']) || empty($_GET['skus'])) {
         die('<p>Keine SKUs für den Vergleich übermittelt.</p>');
     }
@@ -179,47 +134,69 @@
     $skus        = array_map('trim', explode(',', $_GET['skus']));
     $accessToken = getAccessToken();
 
-    $matrix        = [];
-    $allAssocTypes = [];
-    $imageUrls     = [];
-    $allLinkedSkus = [];
+    $matrix           = [];
+    $allAssocTypes    = [];
+    $imageUrls        = [];
+    $articleNames     = [];
+    $seriesBuildInfo  = [];
+    $linkedProducts   = [];
+    $linkedModels     = [];
 
     // Hauptprodukte laden + Assoziationsmatrix aufbauen
     foreach ($skus as $sku) {
         $product = getProductData(API_BASE_URL, $accessToken, $sku);
         if (!$product) continue;
 
-        $imageUrls[$sku] = extractProductImageUrl($product);
+        $imageUrls[$sku]       = extractProductImageUrl($product);
+        $articleNames[$sku]    = extractArticleName($product) ?? $sku;
+        $seriesBuildInfo[$sku] = getSeriesBuildInfoForProduct($product);
 
         foreach ($product['associations'] ?? [] as $type => $data) {
-            if (!in_array($type, $allAssocTypes)) {
+            $items = collectAssociationItems($data);
+            if (empty($items)) {
+                continue;
+            }
+
+            if (!in_array($type, $allAssocTypes, true)) {
                 $allAssocTypes[] = $type;
             }
-            if (!empty($data['products'])) {
-                $matrix[$type][$sku] = $data['products'];
-                foreach ($data['products'] as $linkedSku) {
-                    $allLinkedSkus[] = $linkedSku;
+
+            $matrix[$type][$sku] = $items;
+
+            foreach ($items as $item) {
+                if ($item['kind'] === 'product') {
+                    $linkedProducts[] = $item['code'];
+                } else {
+                    $linkedModels[] = $item['code'];
                 }
             }
         }
     }
 
-    // Assoziationstyp-Labels (de_DE) laden
-    $assocTypeLabels = getAssociationTypeLabels(API_BASE_URL, $accessToken);
+    $assocTypeLabels = getAkeneoAssociationTypeLabels();
 
-    // Assoziationstypen A-Z nach deutschem Label sortieren
     usort($allAssocTypes, fn($a, $b) =>
         strcasecmp($assocTypeLabels[$a] ?? $a, $assocTypeLabels[$b] ?? $b)
     );
 
-    // Deutsche Produktnamen für alle verlinkten SKUs laden
-    $productNames = getProductNames(API_BASE_URL, $accessToken, $allLinkedSkus);
+    $verbindungFilter = array_values(array_filter(array_map(
+        'trim',
+        explode(',', PIM_ASSOC_VERBINDUNG_TYPES)
+    )));
+    if (!empty($verbindungFilter)) {
+        $allAssocTypes = array_values(array_filter(
+            $allAssocTypes,
+            fn($type) => in_array($type, $verbindungFilter, true)
+        ));
+    }
+
+    $linkedProductNames = getArticleNamesForProducts($linkedProducts);
+    $linkedModelNames   = getArticleNamesForProductModels($linkedModels);
 
     if (!empty($allAssocTypes)) {
         echo '<table>';
 
-        // Header-Zeile mit Produktbildern
-        echo '<tr><th class="assoc-type">Ausstattungs-Typ</th>';
+        echo '<tr><th class="assoc-type">Verbindung</th>';
         foreach ($skus as $sku) {
             $img = $imageUrls[$sku] ?? null;
             echo '<th>';
@@ -230,8 +207,26 @@
             } else {
                 echo '<span class="product-img-placeholder">📷</span>';
             }
-            echo '<span class="sku-label">' . htmlspecialchars($sku) . '</span>';
+            echo '<span class="article-name-label">' . htmlspecialchars($articleNames[$sku] ?? $sku) . '</span>';
             echo '</th>';
+        }
+        echo '</tr>';
+
+        echo '<tr><td class="assoc-type">SKU</td>';
+        foreach ($skus as $sku) {
+            echo '<td>' . htmlspecialchars($sku) . '</td>';
+        }
+        echo '</tr>';
+
+        echo '<tr><td class="assoc-type">Baujahr</td>';
+        foreach ($skus as $sku) {
+            echo '<td>' . htmlspecialchars($seriesBuildInfo[$sku]['buildYear']['display'] ?? '–') . '</td>';
+        }
+        echo '</tr>';
+
+        echo '<tr><td class="assoc-type">Wurde gebaut bis</td>';
+        foreach ($skus as $sku) {
+            echo '<td>' . htmlspecialchars($seriesBuildInfo[$sku]['builtUntil']['display'] ?? '–') . '</td>';
         }
         echo '</tr>';
 
@@ -241,14 +236,19 @@
 
             foreach ($skus as $sku) {
                 echo '<td>';
-                if (isset($matrix[$type][$sku])) {
-                    foreach ($matrix[$type][$sku] as $linkedSku) {
-                        $name = $productNames[$linkedSku] ?? $linkedSku;
-                        // Name und SKU anzeigen (SKU klein darunter wenn Name abweicht)
+                if (!empty($matrix[$type][$sku])) {
+                    foreach ($matrix[$type][$sku] as $item) {
+                        $code = $item['code'];
+                        if ($item['kind'] === 'product') {
+                            $name = $linkedProductNames[$code] ?? $code;
+                        } else {
+                            $name = $linkedModelNames[$code] ?? $code;
+                        }
+
                         echo '<span class="badge">';
                         echo htmlspecialchars($name);
-                        if ($name !== $linkedSku) {
-                            echo '<span class="badge-sku">' . htmlspecialchars($linkedSku) . '</span>';
+                        if ($name !== $code) {
+                            echo '<span class="badge-sku">' . htmlspecialchars($code) . '</span>';
                         }
                         echo '</span><br>';
                     }

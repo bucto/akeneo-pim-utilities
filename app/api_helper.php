@@ -384,6 +384,170 @@ function getAkeneoFamilyLabelMap(): array {
 }
 
 /**
+ * Assoziationstyp-Code => Anzeigename (Locale-Fallback).
+ */
+function getAkeneoAssociationTypeLabels(): array {
+    static $cache = null;
+    if ($cache !== null) {
+        return $cache;
+    }
+
+    $labels      = [];
+    $accessToken = getAccessToken();
+    $page        = 1;
+    $limit       = 100;
+
+    while (true) {
+        $response = apiGet(API_BASE_URL . "/association-types?limit={$limit}&page={$page}", $accessToken);
+        if ($response === null || isset($response['code'])) {
+            break;
+        }
+
+        foreach ($response['_embedded']['items'] ?? [] as $item) {
+            $labels[$item['code']] = pimLabel($item['labels'] ?? [], $item['code']);
+        }
+
+        $items = $response['_embedded']['items'] ?? [];
+        if (!isset($response['_links']['next']) || count($items) < $limit) {
+            break;
+        }
+        $page++;
+    }
+
+    $cache = $labels;
+    return $labels;
+}
+
+/**
+ * Verknüpfte Produkte und Produktmodelle einer Assoziation sammeln.
+ *
+ * @return array<int, array{kind: string, code: string}>
+ */
+function collectAssociationItems(array $assocData): array {
+    $items = [];
+
+    foreach ($assocData['products'] ?? [] as $code) {
+        if ($code !== '') {
+            $items[] = ['kind' => 'product', 'code' => (string)$code];
+        }
+    }
+
+    foreach ($assocData['product_models'] ?? [] as $code) {
+        if ($code !== '') {
+            $items[] = ['kind' => 'product_model', 'code' => (string)$code];
+        }
+    }
+
+    return $items;
+}
+
+/**
+ * Artikelnamen für Produkt-Identifiers (Batch).
+ *
+ * @return array<string, string> identifier => Anzeigename
+ */
+function getArticleNamesForProducts(array $identifiers): array {
+    if (empty($identifiers)) {
+        return [];
+    }
+
+    $names       = [];
+    $accessToken = getAccessToken();
+
+    foreach (array_chunk(array_unique($identifiers), 100) as $chunk) {
+        $search = json_encode(['identifier' => [['operator' => 'IN', 'value' => $chunk]]]);
+        $resp   = apiGet(API_BASE_URL . '/products?search=' . urlencode($search) . '&limit=100', $accessToken);
+
+        foreach ($resp['_embedded']['items'] ?? [] as $product) {
+            $ident = $product['identifier'];
+            $names[$ident] = extractArticleName($product) ?? $ident;
+        }
+    }
+
+    foreach (array_unique($identifiers) as $ident) {
+        if (!isset($names[$ident])) {
+            $names[$ident] = $ident;
+        }
+    }
+
+    return $names;
+}
+
+/**
+ * Artikelnamen für Produktmodell-Codes.
+ *
+ * @return array<string, string> modelCode => Anzeigename
+ */
+function getArticleNamesForProductModels(array $modelCodes): array {
+    $names = [];
+
+    foreach (array_unique($modelCodes) as $code) {
+        if ($code === '') {
+            continue;
+        }
+        $model = getAkeneoProductModel($code);
+        if ($model) {
+            $model = enrichProductModelWithAncestors($model);
+        }
+        $names[$code] = extractArticleName($model ?? []) ?? extractProductName($model ?? []) ?? $code;
+    }
+
+    return $names;
+}
+
+/**
+ * Baujahr-Angaben aus dem Serien-Produkt der zugeordneten PIM-Kategorie.
+ * Kategorie-Code = Identifier des Serie-Produkts (Familie series).
+ *
+ * @return array{buildYear: array, builtUntil: array}
+ */
+function getSeriesBuildInfoForProduct(array $product): array {
+    $empty = [
+        'buildYear'  => ['display' => '–', 'raw' => null],
+        'builtUntil' => ['display' => '–', 'raw' => null],
+    ];
+
+    $categories = $product['categories'] ?? [];
+    if (empty($categories)) {
+        return $empty;
+    }
+
+    static $cache = [];
+    $seriesAttrs = [PIM_BUILD_YEAR_ATTR, PIM_BUILT_UNTIL_ATTR];
+
+    foreach ($categories as $categoryCode) {
+        if ($categoryCode === '') {
+            continue;
+        }
+
+        if (!array_key_exists($categoryCode, $cache)) {
+            $seriesProduct = getAkeneoProduct($categoryCode, $seriesAttrs);
+            if (!$seriesProduct) {
+                $cache[$categoryCode] = $empty;
+            } else {
+                $buildYear  = extractAttrValue($seriesProduct, PIM_BUILD_YEAR_ATTR);
+                $builtUntil = extractAttrValue($seriesProduct, PIM_BUILT_UNTIL_ATTR);
+                if ($buildYear['raw'] === null && $builtUntil['raw'] === null) {
+                    $cache[$categoryCode] = $empty;
+                } else {
+                    $cache[$categoryCode] = [
+                        'buildYear'  => $buildYear,
+                        'builtUntil' => $builtUntil,
+                    ];
+                }
+            }
+        }
+
+        $info = $cache[$categoryCode];
+        if (($info['buildYear']['raw'] ?? null) !== null || ($info['builtUntil']['raw'] ?? null) !== null) {
+            return $info;
+        }
+    }
+
+    return $empty;
+}
+
+/**
  * Holt Produkte aus MEHREREN Familien in einem einzigen paginierten API-Call.
  * Lädt optional nur die angegebenen Attribute (drastisch kürzere Antworten).
  *
@@ -695,6 +859,38 @@ function filterLeafProductModels(array $models): array {
     ));
 
     return !empty($leaves) ? $leaves : $models;
+}
+
+/**
+ * Lokalisierten Textwert eines Attributs extrahieren.
+ */
+function extractLocalizedAttr(array $entity, string $attrCode, ?string $locale = null): ?string {
+    $locale  = $locale ?? PIM_LOCALE;
+    $entries = $entity['values'][$attrCode] ?? [];
+    if (empty($entries)) {
+        return null;
+    }
+
+    foreach ($entries as $val) {
+        if (($val['locale'] ?? null) === $locale && is_string($val['data'] ?? null) && $val['data'] !== '') {
+            return $val['data'];
+        }
+    }
+
+    $entry = pickValueEntry($entries);
+    if ($entry && is_string($entry['data'] ?? null) && $entry['data'] !== '') {
+        return $entry['data'];
+    }
+
+    return null;
+}
+
+/**
+ * Artikelname (de) — Fallback auf product_name.
+ */
+function extractArticleName(array $entity, ?string $locale = null): ?string {
+    return extractLocalizedAttr($entity, PIM_ARTICLE_NAME_ATTR, $locale)
+        ?? extractProductName($entity, $locale ?? PIM_LOCALE);
 }
 
 /**

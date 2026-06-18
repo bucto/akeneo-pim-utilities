@@ -247,9 +247,15 @@ function renderBaseStyles(): void {
         :root {
             --amada-red:  #e2001a;
             --dark-gray:  #2d3748;
+            --table-head-bg:    #333333;
+            --table-head-hover: #454545;
             --light-bg:   #f7fafc;
             --border:     #cbd5e0;
             --hover-bg:   #edf2f7;
+        }
+        thead th {
+            background: var(--table-head-bg);
+            color: #fff;
         }
         * { box-sizing: border-box; }
         body {

@@ -51,7 +51,7 @@
             text-align: left;
         }
         th {
-            background-color: #2d3748;
+            background-color: var(--table-head-bg);
             color: white;
             font-weight: 600;
             vertical-align: top;
@@ -86,10 +86,20 @@
             font-size: 26px;
             color: #cbd5e0;
         }
-        .sku-label {
-            font-size: 13px;
+        .article-name-label {
+            font-size: 14px;
+            font-weight: 600;
             text-align: center;
             display: block;
+            margin-top: 4px;
+            line-height: 1.3;
+        }
+        .sku-label {
+            font-size: 11px;
+            color: #718096;
+            text-align: center;
+            display: block;
+            margin-top: 2px;
         }
     </style>
 </head>
@@ -163,14 +173,18 @@
     $products   = [];
     $optionsMap = [];
     $imageUrls  = [];
+    $articleNames = [];
+    $seriesBuildInfo = [];
 
     foreach ($skus as $sku) {
         // Werte von Parent-Modellen (1..n Ebenen) mit dem Produkt zusammenführen
         $product = getAkeneoProductWithInheritedValues($sku);
         if (!$product || !isset($product['values'])) continue;
 
-        $products[$sku]  = $product['values'];
-        $imageUrls[$sku] = $product['_imageUrl'] ?? null;
+        $products[$sku]        = $product['values'];
+        $imageUrls[$sku]       = $product['_imageUrl'] ?? null;
+        $articleNames[$sku]    = extractArticleName($product) ?? $sku;
+        $seriesBuildInfo[$sku] = getSeriesBuildInfoForProduct($product);
 
         foreach ($product['values'] as $attribute => $data) {
             if (!in_array($attribute, $attributes)) {
@@ -221,13 +235,31 @@
         } else {
             echo '<span class="product-img-placeholder">📷</span>';
         }
-        echo '<span class="sku-label">' . htmlspecialchars($sku) . '</span>';
+        echo '<span class="article-name-label">' . htmlspecialchars($articleNames[$sku] ?? $sku) . '</span>';
         echo '</th>';
     }
     echo '</tr>';
 
+    echo '<tr><td class="attr-name">SKU</td>';
+    foreach ($skus as $sku) {
+        echo '<td>' . htmlspecialchars($sku) . '</td>';
+    }
+    echo '</tr>';
+
+    echo '<tr><td class="attr-name">Baujahr</td>';
+    foreach ($skus as $sku) {
+        echo '<td>' . htmlspecialchars($seriesBuildInfo[$sku]['buildYear']['display'] ?? '–') . '</td>';
+    }
+    echo '</tr>';
+
+    echo '<tr><td class="attr-name">Wurde gebaut bis</td>';
+    foreach ($skus as $sku) {
+        echo '<td>' . htmlspecialchars($seriesBuildInfo[$sku]['builtUntil']['display'] ?? '–') . '</td>';
+    }
+    echo '</tr>';
+
     $imageAttrs = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
-    $skipAttrs  = array_merge($imageAttrs, ['product_name']);
+    $skipAttrs  = array_merge($imageAttrs, ['product_name', PIM_ARTICLE_NAME_ATTR, PIM_BUILD_YEAR_ATTR, PIM_BUILT_UNTIL_ATTR]);
 
     foreach ($attributes as $attribute) {
         if (in_array($attribute, $skipAttrs)) continue;

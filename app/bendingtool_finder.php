@@ -453,7 +453,7 @@ $colCount = 8;
             min-width: 1100px;
         }
         thead th {
-            background: var(--dark-gray);
+            background: var(--table-head-bg);
             color: #fff;
             padding: 10px 14px;
             text-align: left;
@@ -463,7 +463,7 @@ $colCount = 8;
             cursor: pointer;
             user-select: none;
         }
-        thead th:hover { background: #3d4f66; }
+        thead th:hover { background: var(--table-head-hover); }
         thead th .sort-icon { margin-left: 4px; opacity: 0.5; font-size: 11px; }
         thead th.sorted-asc  .sort-icon::after { content: '▲'; opacity: 1; }
         thead th.sorted-desc .sort-icon::after { content: '▼'; opacity: 1; }

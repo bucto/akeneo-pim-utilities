@@ -184,7 +184,7 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
         col.col-check  { width: 56px; }
 
         thead th {
-            background: var(--dark-gray);
+            background: var(--table-head-bg);
             color: #fff;
             font-size: 12px;
             font-weight: 600;

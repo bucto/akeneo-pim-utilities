@@ -28,6 +28,17 @@ define('PIM_IMAGE_ATTRS',    getenv('PIM_IMAGE_ATTRS')    ?: 'picture,filename_p
 define('PIM_LOCALE',  getenv('PIM_LOCALE')  ?: 'de_DE');
 define('PIM_CHANNEL', getenv('PIM_CHANNEL') ?: 'ecommerce');
 
+// Produktbezeichnung unter Vergleichsbildern (Locale: PIM_LOCALE)
+define('PIM_ARTICLE_NAME_ATTR', getenv('PIM_ARTICLE_NAME_ATTR') ?: 'artikelname');
+
+// Ausstattungs-Vergleich: Assoziationstypen für Spalte „Verbindung“ (leer = alle)
+define('PIM_ASSOC_VERBINDUNG_TYPES', getenv('PIM_ASSOC_VERBINDUNG_TYPES') ?: 'included_components');
+
+// Serie über Kategorie: Produkt-Identifier = Kategorie-Code
+define('PIM_BUILD_YEAR_ATTR', getenv('PIM_BUILD_YEAR_ATTR') ?: 'build_year');
+define('PIM_BUILT_UNTIL_ATTR', getenv('PIM_BUILT_UNTIL_ATTR') ?: 'was_built_until');
+define('PIM_SERIES_FAMILY', getenv('PIM_SERIES_FAMILY') ?: 'series');
+
 // --- Abkantwerkzeug-Attribute (kommagetrennte Fallback-Kette) ---
 define('PIM_BENDING_HEIGHT_ATTRS', getenv('PIM_BENDING_HEIGHT_ATTRS') ?: 'tool_height');
 define('PIM_BENDING_RADIUS_ATTRS', getenv('PIM_BENDING_RADIUS_ATTRS') ?: 'bendingtool_die_1v_shoulder_radius,bendingtool_die_2v_shoulder_radius');
