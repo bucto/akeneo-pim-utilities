@@ -4,7 +4,7 @@ include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v10_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v11_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 $loadDebug   = [];
@@ -246,6 +246,41 @@ function loadBendingToolData(): array {
     return $rows;
 }
 
+/**
+ * Stellt sicher, dass jede Zeile einen familyCode für den Client-Filter hat.
+ */
+function enrichRowsWithFamilyCodes(array $rows, array $familyLabelsFilter): array {
+    $labelToCode = [];
+    foreach ($familyLabelsFilter as $code => $label) {
+        $key = mb_strtolower(trim($label));
+        if ($key !== '') {
+            $labelToCode[$key] = $code;
+        }
+    }
+
+    foreach ($rows as &$row) {
+        if (!empty($row['familyCode'])) {
+            continue;
+        }
+        $labelKey = mb_strtolower(trim($row['familyLabel'] ?? ''));
+        if ($labelKey !== '' && isset($labelToCode[$labelKey])) {
+            $row['familyCode'] = $labelToCode[$labelKey];
+        }
+    }
+    unset($row);
+
+    return $rows;
+}
+
+function bendingToolRowsHaveFamilyCodes(array $rows): bool {
+    foreach ($rows as $row) {
+        if (!empty($row['familyCode'])) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Cache lesen oder neu laden
 $cacheAge  = null;
 $cacheTime = null;
@@ -253,7 +288,7 @@ if (!$forceReload && file_exists($cacheFile)) {
     $age = time() - filemtime($cacheFile);
     if ($age < $cacheTtlSec) {
         $cached = json_decode(file_get_contents($cacheFile), true);
-        if (is_array($cached) && !empty($cached)) {
+        if (is_array($cached) && !empty($cached) && bendingToolRowsHaveFamilyCodes($cached)) {
             $rows      = $cached;
             $cacheAge  = $age;
             $cacheTime = filemtime($cacheFile);
@@ -338,6 +373,8 @@ foreach ($rowFamilyFilter['values'] as $code) {
         $familyLabelsFilter[$code] = $rowFamilyFilter['labels'][$code] ?? $code;
     }
 }
+
+$rows = enrichRowsWithFamilyCodes($rows, $familyLabelsFilter);
 
 $sizeFilter   = collectUniqueFilterValues($rows, 'size', true);
 $angleFilter  = collectUniqueFilterValues($rows, 'angle', true);
@@ -839,7 +876,11 @@ const variantCache = new Map();
 
 function applyFilters() {
     const search = document.getElementById('filterSearch').value.toLowerCase().trim();
-    const family = document.getElementById('filterFamily').value;
+    const familyEl = document.getElementById('filterFamily');
+    const family = familyEl.value;
+    const familyText = family
+        ? familyEl.options[familyEl.selectedIndex].text.trim().toLowerCase()
+        : '';
     const size   = document.getElementById('filterSize').value;
     const angle  = document.getElementById('filterAngle').value;
     const height = document.getElementById('filterHeight').value;
@@ -853,7 +894,11 @@ function applyFilters() {
         const matchSearch = !search
             || row.dataset.code.includes(search)
             || row.dataset.name.includes(search);
-        const matchFamily = !family || row.dataset.family === family;
+        const rowFamily = row.dataset.family || '';
+        const rowFamilyLabel = (row.dataset.familyLabel || '').trim();
+        const matchFamily = !family
+            || rowFamily === family
+            || (familyText !== '' && rowFamilyLabel === familyText);
         const matchSize   = !size   || row.dataset.size   === size;
         const matchAngle  = !angle  || row.dataset.angle  === angle;
         const matchHeight = !height || row.dataset.height === height;
