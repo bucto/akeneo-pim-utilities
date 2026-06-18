@@ -149,9 +149,40 @@ function upsertFamilyConfig(
 }
 
 /**
+ * SKU-Liste für Vergleichs-Links normalisieren (kommagetrennt).
+ * Akzeptiert auch eingefügte URLs mit skus=-Parameter.
+ */
+function normalizeCompareLinkSkus(string $input): string {
+    $input = trim($input);
+    if ($input === '') {
+        return '';
+    }
+
+    if (preg_match('/[?&]skus=([^&]+)/', $input, $match)) {
+        $input = urldecode($match[1]);
+    }
+
+    $parts = preg_split('/[\s,;]+/', $input, -1, PREG_SPLIT_NO_EMPTY);
+    $skus  = [];
+    foreach ($parts as $part) {
+        $sku = trim($part);
+        if ($sku !== '') {
+            $skus[] = $sku;
+        }
+    }
+
+    return implode(',', $skus);
+}
+
+/** URL zur Vergleichsseite mit SKU-Liste. */
+function buildCompareSkusUrl(string $targetPage, string $skus): string {
+    return $targetPage . '?' . http_build_query(['skus' => $skus]);
+}
+
+/**
  * Schnellauswahl-Links für den Produkt-Vergleich (eine Familie).
  *
- * @return array<int, array{id: int, name: string, url: string, family_code: string, sort_order: int}>
+ * @return array<int, array{id: int, name: string, skus: string, family_code: string, sort_order: int}>
  */
 function getCompareLinksForFamily(string $familyCode): array {
     $pdo = getDbConnection();
@@ -161,7 +192,7 @@ function getCompareLinksForFamily(string $familyCode): array {
 
     try {
         $stmt = $pdo->prepare(
-            'SELECT id, name, url, family_code, sort_order
+            'SELECT id, name, skus, family_code, sort_order
              FROM pim_compare_links
              WHERE family_code = :family
              ORDER BY sort_order, name, id'
@@ -184,7 +215,7 @@ function getAllCompareLinks(): array {
 
     try {
         $stmt = $pdo->query(
-            'SELECT id, name, url, family_code, sort_order, updated_at
+            'SELECT id, name, skus, family_code, sort_order, updated_at
              FROM pim_compare_links
              ORDER BY family_code, sort_order, name, id'
         );
@@ -202,7 +233,7 @@ function getCompareLinkById(int $id): ?array {
 
     try {
         $stmt = $pdo->prepare(
-            'SELECT id, name, url, family_code, sort_order
+            'SELECT id, name, skus, family_code, sort_order
              FROM pim_compare_links WHERE id = :id LIMIT 1'
         );
         $stmt->execute([':id' => $id]);
@@ -213,18 +244,18 @@ function getCompareLinkById(int $id): ?array {
     }
 }
 
-function saveCompareLink(?int $id, string $name, string $url, string $familyCode, int $sortOrder = 0): bool {
+function saveCompareLink(?int $id, string $name, string $skus, string $familyCode, int $sortOrder = 0): bool {
     $pdo = getDbConnection();
     if (!$pdo) {
         return false;
     }
 
-    $name        = trim($name);
-    $url         = trim($url);
-    $familyCode  = trim($familyCode);
-    $sortOrder   = max(0, $sortOrder);
+    $name       = trim($name);
+    $skus       = normalizeCompareLinkSkus($skus);
+    $familyCode = trim($familyCode);
+    $sortOrder  = max(0, $sortOrder);
 
-    if ($name === '' || $url === '' || $familyCode === '') {
+    if ($name === '' || $skus === '' || $familyCode === '') {
         return false;
     }
 
@@ -232,12 +263,12 @@ function saveCompareLink(?int $id, string $name, string $url, string $familyCode
         if ($id !== null && $id > 0) {
             $stmt = $pdo->prepare(
                 'UPDATE pim_compare_links
-                 SET name = :name, url = :url, family_code = :family, sort_order = :sort
+                 SET name = :name, skus = :skus, family_code = :family, sort_order = :sort
                  WHERE id = :id'
             );
             $stmt->execute([
                 ':name'   => $name,
-                ':url'    => $url,
+                ':skus'   => $skus,
                 ':family' => $familyCode,
                 ':sort'   => $sortOrder,
                 ':id'     => $id,
@@ -246,12 +277,12 @@ function saveCompareLink(?int $id, string $name, string $url, string $familyCode
         }
 
         $stmt = $pdo->prepare(
-            'INSERT INTO pim_compare_links (name, url, family_code, sort_order)
-             VALUES (:name, :url, :family, :sort)'
+            'INSERT INTO pim_compare_links (name, skus, family_code, sort_order)
+             VALUES (:name, :skus, :family, :sort)'
         );
         $stmt->execute([
             ':name'   => $name,
-            ':url'    => $url,
+            ':skus'   => $skus,
             ':family' => $familyCode,
             ':sort'   => $sortOrder,
         ]);

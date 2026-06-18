@@ -28,13 +28,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $dbOk) {
     } else {
         $id         = (int)($_POST['id'] ?? 0);
         $name       = trim($_POST['name'] ?? '');
-        $url        = trim($_POST['url'] ?? '');
+        $skus       = trim($_POST['skus'] ?? '');
         $familyCode = trim($_POST['family_code'] ?? '');
         $sortOrder  = (int)($_POST['sort_order'] ?? 0);
 
-        if ($name === '' || $url === '' || $familyCode === '') {
-            $error = 'Bitte Name, URL und Produktfamilie ausfüllen.';
-        } elseif (saveCompareLink($id > 0 ? $id : null, $name, $url, $familyCode, $sortOrder)) {
+        if ($name === '' || $skus === '' || $familyCode === '') {
+            $error = 'Bitte Name, SKUs und Produktfamilie ausfüllen.';
+        } elseif (saveCompareLink($id > 0 ? $id : null, $name, $skus, $familyCode, $sortOrder)) {
             header('Location: compare_links_settings.php?saved=1');
             exit;
         } else {
@@ -171,13 +171,19 @@ usort($akFamilies, fn($a, $b) => strcasecmp(
             margin-bottom: 6px;
         }
         .form-field input,
-        .form-field select {
+        .form-field select,
+        .form-field textarea {
             width: 100%;
             padding: 10px 12px;
             font-size: 14px;
             border: 1px solid var(--border);
             border-radius: 5px;
             background: #fff;
+        }
+        .form-field textarea {
+            resize: vertical;
+            min-height: 72px;
+            font-family: inherit;
         }
         .form-field.full { grid-column: 1 / -1; }
         .form-actions {
@@ -237,15 +243,16 @@ usort($akFamilies, fn($a, $b) => strcasecmp(
     <?php if (!$dbOk): ?>
         <div class="notice notice-error">
             <strong>Datenbankverbindung nicht verfügbar.</strong><br>
-            Bitte zuerst <code>database/init/02_pim_compare_links.sql</code> ausführen und die DB-Umgebungsvariablen prüfen.
+            Bitte zuerst <code>database/init/02_pim_compare_links.sql</code> bzw.
+            <code>03_pim_compare_links_skus.sql</code> (Migration) ausführen und die DB-Umgebungsvariablen prüfen.
         </div>
     <?php else: ?>
 
         <p class="hint">
             Pflege hier Schnellauswahl-Links für den Produkt-Vergleich.
-            Jeder Link hat einen <strong>Namen</strong>, eine <strong>URL</strong> (z.&nbsp;B.
-            <code>Vergleich_TechnischeDaten.php?skus=LC2415,LC3015</code>) und gilt für eine
-            <strong>Produktfamilie</strong>. Die Links erscheinen im Produkt-Vergleich beim ?-Symbol.
+            Jeder Eintrag hat einen <strong>Namen</strong>, eine kommagetrennte Liste von
+            <strong>Artikelnummern (SKUs)</strong> und gilt für eine <strong>Produktfamilie</strong>.
+            Im Vergleich werden daraus automatisch Links zu Tech. Daten und Ausstattung erzeugt.
         </p>
 
         <div class="form-card">
@@ -278,10 +285,9 @@ usort($akFamilies, fn($a, $b) => strcasecmp(
                         </select>
                     </div>
                     <div class="form-field full">
-                        <label for="url">URL</label>
-                        <input type="text" id="url" name="url" required maxlength="500"
-                               placeholder="Vergleich_TechnischeDaten.php?skus=SKU1,SKU2"
-                               value="<?php echo htmlspecialchars($editRow['url'] ?? ''); ?>">
+                        <label for="skus">Artikelnummern (SKUs)</label>
+                        <textarea id="skus" name="skus" required rows="3"
+                                  placeholder="EGB-40.10e, EGB-40.10e+ATSA, HRB-50.20_AC"><?php echo htmlspecialchars(str_replace(',', ', ', $editRow['skus'] ?? '')); ?></textarea>
                     </div>
                     <div class="form-field">
                         <label for="sort_order">Reihenfolge</label>
@@ -305,7 +311,7 @@ usort($akFamilies, fn($a, $b) => strcasecmp(
                 <thead>
                     <tr>
                         <th>Name</th>
-                        <th>URL</th>
+                        <th>SKUs</th>
                         <th>Produktfamilie</th>
                         <th>Reihenf.</th>
                         <th></th>
@@ -323,7 +329,7 @@ usort($akFamilies, fn($a, $b) => strcasecmp(
                     ?>
                         <tr>
                             <td><?php echo htmlspecialchars($link['name']); ?></td>
-                            <td class="url-cell"><code><?php echo htmlspecialchars($link['url']); ?></code></td>
+                            <td class="url-cell"><code><?php echo htmlspecialchars($link['skus']); ?></code></td>
                             <td>
                                 <?php echo htmlspecialchars($famLabel); ?>
                                 <br><code><?php echo htmlspecialchars($famCode); ?></code>

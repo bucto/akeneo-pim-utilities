@@ -406,21 +406,37 @@ $tabs = [
             gap: 6px;
             align-items: center;
         }
-        .suggestion-link-db {
+        .suggestion-link {
             display: inline-block;
             padding: 8px 14px;
             font-size: 13px;
             font-weight: 600;
             border-radius: 5px;
             text-decoration: none;
-            background: var(--dark-gray);
-            color: #fff;
-            border: 1px solid var(--dark-gray);
-            transition: background 0.15s;
+            border: 1px solid var(--border);
+            background: #fff;
+            color: #4a5568;
+            transition: background 0.15s, color 0.15s;
         }
-        .suggestion-link-db:hover {
+        .suggestion-link:hover {
+            background: var(--light-bg);
+            color: var(--dark-gray);
+        }
+        .suggestion-link.tech {
+            background: var(--dark-gray);
+            border-color: var(--dark-gray);
+            color: #fff;
+        }
+        .suggestion-link.tech:hover {
             background: #1a202c;
             color: #fff;
+        }
+        .suggestion-link.ausstattung {
+            border-color: #fed7d7;
+            color: #9b2c2c;
+        }
+        .suggestion-link.ausstattung:hover {
+            background: #fff5f5;
         }
     </style>
 </head>
@@ -513,16 +529,22 @@ $tabs = [
 
                     <div class="suggestion-group">
                         <div class="suggestion-list">
-                            <?php foreach ($compareLinks as $link): ?>
+                            <?php foreach ($compareLinks as $link):
+                                $techUrl = buildCompareSkusUrl('Vergleich_TechnischeDaten.php', $link['skus']);
+                                $ausUrl  = buildCompareSkusUrl('Vergleich_Austattung.php', $link['skus']);
+                            ?>
                                 <div class="suggestion-item">
                                     <div class="suggestion-meta">
                                         <span class="suggestion-label"><?php echo htmlspecialchars($link['name']); ?></span>
-                                        <span class="suggestion-skus"><?php echo htmlspecialchars($link['url']); ?></span>
                                     </div>
                                     <div class="suggestion-actions">
-                                        <a class="suggestion-link-db"
-                                           href="<?php echo htmlspecialchars($link['url']); ?>">
-                                            Öffnen →
+                                        <a class="suggestion-link tech"
+                                           href="<?php echo htmlspecialchars($techUrl); ?>">
+                                            Tech. Daten →
+                                        </a>
+                                        <a class="suggestion-link ausstattung"
+                                           href="<?php echo htmlspecialchars($ausUrl); ?>">
+                                            Ausstattung →
                                         </a>
                                     </div>
                                 </div>
