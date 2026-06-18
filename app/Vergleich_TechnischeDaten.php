@@ -101,6 +101,21 @@
             display: block;
             margin-top: 2px;
         }
+        .badge {
+            display: inline-block;
+            background: #e2e8f0;
+            padding: 4px 8px;
+            margin: 2px 0;
+            border-radius: 4px;
+            font-size: 13px;
+            line-height: 1.3;
+        }
+        .badge-sku {
+            display: block;
+            font-size: 11px;
+            color: #718096;
+            margin-top: 1px;
+        }
     </style>
 </head>
 <body>
@@ -169,12 +184,20 @@
     $skus        = array_map('trim', explode(',', $_GET['skus']));
     $accessToken = getAccessToken();
 
-    $attributes = [];
-    $products   = [];
-    $optionsMap = [];
-    $imageUrls  = [];
-    $articleNames = [];
+    $attributes      = [];
+    $products        = [];
+    $optionsMap      = [];
+    $imageUrls       = [];
+    $articleNames    = [];
     $seriesBuildInfo = [];
+    $assocMatrix     = [];
+    $linkedProducts  = [];
+    $linkedModels    = [];
+
+    $compareAssocTypes = array_values(array_filter(array_map(
+        'trim',
+        explode(',', PIM_ASSOC_VERBINDUNG_TYPES)
+    )));
 
     foreach ($skus as $sku) {
         // Werte von Parent-Modellen (1..n Ebenen) mit dem Produkt zusammenführen
@@ -185,6 +208,20 @@
         $imageUrls[$sku]       = $product['_imageUrl'] ?? null;
         $articleNames[$sku]    = extractArticleName($product) ?? $sku;
         $seriesBuildInfo[$sku] = getSeriesBuildInfoForProduct($product);
+
+        foreach ($compareAssocTypes as $type) {
+            $items = collectAssociationItems($product['associations'][$type] ?? []);
+            if (!empty($items)) {
+                $assocMatrix[$type][$sku] = $items;
+                foreach ($items as $item) {
+                    if ($item['kind'] === 'product') {
+                        $linkedProducts[] = $item['code'];
+                    } else {
+                        $linkedModels[] = $item['code'];
+                    }
+                }
+            }
+        }
 
         foreach ($product['values'] as $attribute => $data) {
             if (!in_array($attribute, $attributes)) {
@@ -223,6 +260,10 @@
 
     $skus = sortSkusByBuildYearDesc($skus, $seriesBuildInfo);
 
+    $assocTypeLabels    = getAkeneoAssociationTypeLabels();
+    $linkedProductNames = getArticleNamesForProducts($linkedProducts);
+    $linkedModelNames   = getArticleNamesForProductModels($linkedModels);
+
     echo '<table>';
 
     // Header-Zeile mit Produktbildern
@@ -260,8 +301,41 @@
     }
     echo '</tr>';
 
-    $imageAttrs = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
-    $skipAttrs  = array_merge($imageAttrs, ['product_name', PIM_ARTICLE_NAME_ATTR, PIM_BUILD_YEAR_ATTR, PIM_BUILT_UNTIL_ATTR]);
+    foreach ($compareAssocTypes as $type) {
+        $typeLabel = $assocTypeLabels[$type] ?? $type;
+        echo '<tr><td class="attr-name">' . htmlspecialchars($typeLabel) . '</td>';
+
+        foreach ($skus as $sku) {
+            echo '<td>';
+            if (!empty($assocMatrix[$type][$sku])) {
+                foreach ($assocMatrix[$type][$sku] as $item) {
+                    $code = $item['code'];
+                    $name = $item['kind'] === 'product'
+                        ? ($linkedProductNames[$code] ?? $code)
+                        : ($linkedModelNames[$code] ?? $code);
+
+                    echo '<span class="badge">';
+                    echo htmlspecialchars($name);
+                    if ($name !== $code) {
+                        echo '<span class="badge-sku">' . htmlspecialchars($code) . '</span>';
+                    }
+                    echo '</span><br>';
+                }
+            } else {
+                echo '–';
+            }
+            echo '</td>';
+        }
+        echo '</tr>';
+    }
+
+    $imageAttrs   = array_map('trim', explode(',', PIM_IMAGE_ATTRS));
+    $excludeAttrs = array_map('trim', explode(',', PIM_COMPARE_EXCLUDE_ATTRS));
+    $skipAttrs    = array_merge(
+        $imageAttrs,
+        $excludeAttrs,
+        ['product_name', PIM_ARTICLE_NAME_ATTR, PIM_BUILD_YEAR_ATTR, PIM_BUILT_UNTIL_ATTR]
+    );
 
     foreach ($attributes as $attribute) {
         if (in_array($attribute, $skipAttrs)) continue;

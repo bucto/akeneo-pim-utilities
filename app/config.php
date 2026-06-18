@@ -34,6 +34,9 @@ define('PIM_ARTICLE_NAME_ATTR', getenv('PIM_ARTICLE_NAME_ATTR') ?: 'artikelname'
 // Ausstattungs-Vergleich: Assoziationstypen für Spalte „Verbindung“ (leer = alle)
 define('PIM_ASSOC_VERBINDUNG_TYPES', getenv('PIM_ASSOC_VERBINDUNG_TYPES') ?: 'included_components');
 
+// Technik-Vergleich: auszublendende Attribut-Codes (kommagetrennt)
+define('PIM_COMPARE_EXCLUDE_ATTRS', getenv('PIM_COMPARE_EXCLUDE_ATTRS') ?: 'filename_picture_front,offer_id');
+
 // Serie über Kategorie: Produkt-Identifier = Kategorie-Code
 define('PIM_BUILD_YEAR_ATTR', getenv('PIM_BUILD_YEAR_ATTR') ?: 'build_year');
 define('PIM_BUILT_UNTIL_ATTR', getenv('PIM_BUILT_UNTIL_ATTR') ?: 'was_built_until');
