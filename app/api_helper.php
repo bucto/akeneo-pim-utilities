@@ -144,7 +144,10 @@ function formatAmount(string $amount): string {
 /**
  * Akeneo-Einheitencode → lesbare Abkürzung.
  */
-function unitAbbr(string $unit): string {
+function unitAbbr(?string $unit): string {
+    if ($unit === null || $unit === '') {
+        return '';
+    }
     static $map = [
         'MILLIMETER'            => 'mm',   'CENTIMETER'        => 'cm',
         'DECIMETER'             => 'dm',   'METER'             => 'm',
@@ -176,10 +179,95 @@ function unitAbbr(string $unit): string {
     return $map[strtoupper($unit)] ?? strtolower($unit);
 }
 
+/** Label aus Akeneo labels-Array (Locale-Fallback). */
+function pimLabel(array $labels, string $fallback = ''): string {
+    if (isset($labels[PIM_LOCALE]) && $labels[PIM_LOCALE] !== '') {
+        return $labels[PIM_LOCALE];
+    }
+    if (isset($labels['de_DE']) && $labels['de_DE'] !== '') {
+        return $labels['de_DE'];
+    }
+    $first = reset($labels);
+    if (is_string($first) && $first !== '') {
+        return $first;
+    }
+    return $fallback;
+}
+
 /**
- * Extrahiert einen einzelnen Attributwert aus einem Produkt als [display, raw].
- * Erkennt Maßattribute (amount/unit), Multi-Select-Arrays und einfache Werte.
+ * Option-Labels eines Simple-/Multi-Select-Attributs (code => Anzeigename).
  */
+function getAkeneoAttributeOptionLabels(string $attrCode): array {
+    static $cache = [];
+
+    if ($attrCode === '') {
+        return [];
+    }
+    if (isset($cache[$attrCode])) {
+        return $cache[$attrCode];
+    }
+
+    $labels      = [];
+    $accessToken = getAccessToken();
+    $page        = 1;
+    $limit       = 100;
+
+    while (true) {
+        $response = apiGet(
+            API_BASE_URL . '/attributes/' . urlencode($attrCode) . "/options?limit={$limit}&page={$page}",
+            $accessToken
+        );
+
+        if ($response === null || isset($response['code'])) {
+            break;
+        }
+
+        foreach ($response['_embedded']['items'] ?? [] as $option) {
+            $labels[$option['code']] = pimLabel($option['labels'] ?? [], $option['code']);
+        }
+
+        $items = $response['_embedded']['items'] ?? [];
+        if (!isset($response['_links']['next']) || count($items) < $limit) {
+            break;
+        }
+        $page++;
+    }
+
+    $cache[$attrCode] = $labels;
+    return $labels;
+}
+
+/**
+ * Ersetzt Option-Codes in [display, raw] durch übersetzte Labels (raw bleibt der Code).
+ */
+function applyOptionLabels(array $value, array $optionLabels): array {
+    if ($value['raw'] === null || $value['raw'] === '' || empty($optionLabels)) {
+        return $value;
+    }
+
+    $raw = $value['raw'];
+
+    if (is_string($raw) && str_contains($raw, ',')) {
+        $parts    = array_map('trim', explode(',', $raw));
+        $displays = array_map(fn($p) => $optionLabels[$p] ?? $p, $parts);
+        return ['display' => implode(', ', $displays), 'raw' => $raw];
+    }
+
+    if (is_string($raw) && isset($optionLabels[$raw])) {
+        return ['display' => $optionLabels[$raw], 'raw' => $raw];
+    }
+
+    return $value;
+}
+
+/**
+ * Extrahiert Attributwert mit Option-Label-Auflösung (Fallback-Kette).
+ */
+function extractAttrValueFirstWithOptions(array $entity, string $envConstant, array $optionLabels = []): array {
+    $val = extractAttrValueFirst($entity, $envConstant);
+    return applyOptionLabels($val, $optionLabels);
+}
+
 /**
  * Probiert mehrere Attribut-Codes der Reihe nach (Fallback-Kette aus config/env).
  */
@@ -203,7 +291,11 @@ function extractAttrValue(array $product, string $attrCode): array {
     // Maßattribut: {"amount": "6.0000", "unit": "MILLIMETER"}
     if (is_array($rawData) && array_key_exists('amount', $rawData)) {
         $raw  = (float)$rawData['amount'];
-        $disp = formatAmount((string)$rawData['amount']) . ' ' . unitAbbr($rawData['unit']);
+        $disp = formatAmount((string)$rawData['amount']);
+        $unit = $rawData['unit'] ?? $entry['unit'] ?? null;
+        if ($unit !== null && $unit !== '') {
+            $disp .= ' ' . unitAbbr((string)$unit);
+        }
         return ['display' => $disp, 'raw' => $raw];
     }
 
@@ -274,12 +366,21 @@ function getAkeneoFamilies(): array {
     }
 
     usort($allFamilies, function($a, $b) {
-        $labelA = $a['labels']['de_DE'] ?? $a['code'];
-        $labelB = $b['labels']['de_DE'] ?? $b['code'];
+        $labelA = pimLabel($a['labels'] ?? [], $a['code']);
+        $labelB = pimLabel($b['labels'] ?? [], $b['code']);
         return strcasecmp($labelA, $labelB);
     });
 
     return $allFamilies;
+}
+
+/** Familien-Code => Anzeigename (alle Akeneo-Familien). */
+function getAkeneoFamilyLabelMap(): array {
+    $map = [];
+    foreach (getAkeneoFamilies() as $family) {
+        $map[$family['code']] = pimLabel($family['labels'] ?? [], $family['code']);
+    }
+    return $map;
 }
 
 /**
@@ -666,13 +767,38 @@ function getAkeneoProductsByFamily(string $familyCode): array {
 }
 
 /**
- * Holt alle Varianten-Produkte zu einem Produktmodell (parent = Modellcode).
+ * Produkt inkl. geerbter Werte aus Parent-Modell-Kette (ohne erneuten Produkt-GET).
  */
-function getAkeneoProductsByParent(string $parentCode, array $onlyAttrs = []): array {
-    if ($parentCode === '') {
-        return [];
+function mergeProductWithAncestorValues(array $product, array $onlyAttrs = []): array {
+    $entities = [];
+    $parentCode = $product['parent'] ?? null;
+    if ($parentCode) {
+        $entities = getProductModelAncestorChain($parentCode, $onlyAttrs);
     }
+    $entities[] = $product;
+    $product['values'] = mergeEntityValues($entities);
+    return $product;
+}
 
+/**
+ * Varianten nach Länge, dann Artikelnummer sortieren.
+ */
+function sortBendingVariantProducts(array $products): array {
+    usort($products, function ($a, $b) {
+        $lenA = extractAttrValueFirst($a, PIM_BENDING_LENGTH_ATTRS)['raw'];
+        $lenB = extractAttrValueFirst($b, PIM_BENDING_LENGTH_ATTRS)['raw'];
+        if ($lenA !== null && $lenB !== null && is_numeric($lenA) && is_numeric($lenB)) {
+            return (float)$lenA <=> (float)$lenB;
+        }
+        return strcasecmp($a['identifier'] ?? '', $b['identifier'] ?? '');
+    });
+    return $products;
+}
+
+/**
+ * Interne paginierte Abfrage: Produkte zu einem Parent-Modell.
+ */
+function fetchProductsByParent(string $parentCode, array $onlyAttrs = []): array {
     $accessToken  = getAccessToken();
     $allProducts  = [];
     $page         = 1;
@@ -687,7 +813,7 @@ function getAkeneoProductsByParent(string $parentCode, array $onlyAttrs = []): a
         $response = apiGet($url, $accessToken);
 
         if ($response === null || isset($response['code'])) {
-            break;
+            return [];
         }
 
         $items = $response['_embedded']['items'] ?? [];
@@ -703,14 +829,23 @@ function getAkeneoProductsByParent(string $parentCode, array $onlyAttrs = []): a
         $page++;
     }
 
-    usort($allProducts, function ($a, $b) {
-        $lenA = extractAttrValueFirst($a, PIM_BENDING_LENGTH_ATTRS)['raw'];
-        $lenB = extractAttrValueFirst($b, PIM_BENDING_LENGTH_ATTRS)['raw'];
-        if ($lenA !== null && $lenB !== null && is_numeric($lenA) && is_numeric($lenB)) {
-            return (float)$lenA <=> (float)$lenB;
-        }
-        return strcasecmp($a['identifier'] ?? '', $b['identifier'] ?? '');
-    });
-
     return $allProducts;
+}
+
+/**
+ * Holt alle Varianten-Produkte zu einem Produktmodell (parent = Modellcode).
+ * Fallback ohne Attribut-Filter, wenn ungültige Attribute einen API-Fehler auslösen.
+ */
+function getAkeneoProductsByParent(string $parentCode, array $onlyAttrs = []): array {
+    if ($parentCode === '') {
+        return [];
+    }
+
+    $products = fetchProductsByParent($parentCode, $onlyAttrs);
+
+    if (empty($products) && !empty($onlyAttrs) && getLastApiError()) {
+        $products = fetchProductsByParent($parentCode, []);
+    }
+
+    return sortBendingVariantProducts($products);
 }

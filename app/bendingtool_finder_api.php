@@ -11,13 +11,8 @@ if ($modelCode === '') {
     exit;
 }
 
-$attrs = array_unique(array_merge(
-    array_map('trim', explode(',', PIM_BENDING_LENGTH_ATTRS)),
-    array_map('trim', explode(',', PIM_BENDING_RADIUS_ATTRS)),
-    ['product_name']
-));
-
-$products = getAkeneoProductsByParent($modelCode, $attrs);
+// Ohne Attribut-Filter laden — ungültige Attribute würden sonst 422 auslösen.
+$products = getAkeneoProductsByParent($modelCode, []);
 
 if (empty($products) && getLastApiError()) {
     http_response_code(502);
@@ -25,22 +20,30 @@ if (empty($products) && getLastApiError()) {
     exit;
 }
 
-$variants = array_map(function (array $product): array {
+$lengthAttr  = trim(explode(',', PIM_BENDING_LENGTH_ATTRS)[0]);
+$lengthOpts  = getAkeneoAttributeOptionLabels($lengthAttr);
+
+$enriched = array_map(
+    fn(array $product) => mergeProductWithAncestorValues($product),
+    $products
+);
+$enriched = sortBendingVariantProducts($enriched);
+
+$variants = array_map(function (array $product) use ($lengthOpts): array {
     $enabled = ($product['enabled'] ?? true) !== false;
-    $length  = extractAttrValueFirst($product, PIM_BENDING_LENGTH_ATTRS);
-    $radius  = extractBendingShoulderRadius($product);
 
     return [
         'identifier' => $product['identifier'] ?? '',
         'name'       => extractProductName($product) ?? ($product['identifier'] ?? ''),
-        'length'     => $length,
-        'radius'     => $radius,
+        'sapNumber'  => extractAttrValueFirst($product, PIM_BENDING_SAP_ATTRS),
+        'length'     => extractAttrValueFirstWithOptions($product, PIM_BENDING_LENGTH_ATTRS, $lengthOpts),
+        'radius'     => extractBendingShoulderRadius($product),
         'status'     => [
             'display' => $enabled ? 'Aktiv' : 'Inaktiv',
             'raw'     => $enabled ? 'active' : 'disabled',
         ],
     ];
-}, $products);
+}, $enriched);
 
 echo json_encode([
     'model'    => $modelCode,

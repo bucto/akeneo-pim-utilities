@@ -32,7 +32,8 @@ define('PIM_CHANNEL', getenv('PIM_CHANNEL') ?: 'ecommerce');
 define('PIM_BENDING_HEIGHT_ATTRS', getenv('PIM_BENDING_HEIGHT_ATTRS') ?: 'tool_height');
 define('PIM_BENDING_RADIUS_ATTRS', getenv('PIM_BENDING_RADIUS_ATTRS') ?: 'bendingtool_die_1v_shoulder_radius,bendingtool_die_2v_shoulder_radius');
 define('PIM_BENDING_SERIES_ATTRS', getenv('PIM_BENDING_SERIES_ATTRS') ?: 'series_name');
-define('PIM_BENDING_LENGTH_ATTRS', getenv('PIM_BENDING_LENGTH_ATTRS') ?: 'bendingtool_tool_length,bendingtool_length,bendingtool_die_length');
+define('PIM_BENDING_LENGTH_ATTRS', getenv('PIM_BENDING_LENGTH_ATTRS') ?: 'tool_length');
+define('PIM_BENDING_SAP_ATTRS', getenv('PIM_BENDING_SAP_ATTRS') ?: 'sap_nummer');
 
 // Werkzeugfinder: kommagetrennte Familien-Codes (leer = DB/Fallback bendingtool_*)
 define('PIM_BENDING_FAMILIES', getenv('PIM_BENDING_FAMILIES') ?: '');

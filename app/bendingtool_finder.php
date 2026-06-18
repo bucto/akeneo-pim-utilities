@@ -4,7 +4,7 @@ include('db_helper.php');
 include('common.php');
 
 // --- Cache-Datei (Produktmodelle) ---
-$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v8_cache.json';
+$cacheFile   = sys_get_temp_dir() . '/bendingtool_finder_v9_cache.json';
 $cacheTtlSec = 1800; // 30 Minuten
 $forceReload = isset($_GET['reload']);
 $loadDebug   = [];
@@ -45,7 +45,7 @@ function getBendingToolFamilies(): array {
     ));
 }
 
-function modelToRow(array $model, array $familyLabels): array {
+function modelToRow(array $model, array $familyLabels, array $heightOptions, array $seriesOptions): array {
     $fc   = $model['family'] ?? '';
     $code = $model['code'] ?? '';
 
@@ -57,9 +57,9 @@ function modelToRow(array $model, array $familyLabels): array {
         'imageUrl'    => $model['_imageUrl'] ?? null,
         'size'        => extractAttrValueFirst($model, PIM_BENDING_SIZE_ATTRS),
         'angle'       => extractAttrValueFirst($model, PIM_BENDING_ANGLE_ATTRS),
-        'height'      => extractAttrValueFirst($model, PIM_BENDING_HEIGHT_ATTRS),
+        'height'      => extractAttrValueFirstWithOptions($model, PIM_BENDING_HEIGHT_ATTRS, $heightOptions),
         'radius'      => extractBendingShoulderRadius($model),
-        'series'      => extractAttrValueFirst($model, PIM_BENDING_SERIES_ATTRS),
+        'series'      => extractAttrValueFirstWithOptions($model, PIM_BENDING_SERIES_ATTRS, $seriesOptions),
     ];
 }
 
@@ -128,10 +128,12 @@ function loadBendingToolData(): array {
     $onlyAttrs = array_values(array_unique(array_merge($filterAttrs, $extraAttrs, $imageAttrs)));
 
     $familyCodes  = array_column($bendingFamilies, 'code');
-    $familyLabels = [];
-    foreach ($bendingFamilies as $f) {
-        $familyLabels[$f['code']] = $f['labels']['de_DE'] ?? $f['code'];
-    }
+    $familyLabels = getAkeneoFamilyLabelMap();
+
+    $heightAttr = trim(explode(',', PIM_BENDING_HEIGHT_ATTRS)[0]);
+    $seriesAttr = trim(explode(',', PIM_BENDING_SERIES_ATTRS)[0]);
+    $heightOptions = getAkeneoAttributeOptionLabels($heightAttr);
+    $seriesOptions = getAkeneoAttributeOptionLabels($seriesAttr);
 
     $seriesSearch = bendingSeriesAttributeSearch();
     $loadDebug['series_filter'] = trim(PIM_BENDING_SERIES_FILTER) ?: null;
@@ -233,7 +235,10 @@ function loadBendingToolData(): array {
         $models
     );
 
-    $rows = array_map(fn($m) => modelToRow($m, $familyLabels), $models);
+    $rows = array_map(
+        fn($m) => modelToRow($m, $familyLabels, $heightOptions, $seriesOptions),
+        $models
+    );
     $rows = array_values(array_filter($rows, 'matchesSeriesFilter'));
     $loadDebug['rows_after_series_filter'] = count($rows);
     usort($rows, fn($a, $b) => strcasecmp($a['name'], $b['name']));
@@ -297,11 +302,31 @@ function collectUniqueFilterValues(array $rows, string $field, bool $numericSort
     return ['values' => $values, 'labels' => $labels];
 }
 
+function collectUniqueFamilies(array $rows): array {
+    $labels = [];
+    foreach ($rows as $row) {
+        $code = $row['familyCode'] ?? '';
+        if ($code === '') {
+            continue;
+        }
+        $labels[$code] = $row['familyLabel'] ?? $code;
+    }
+
+    $values = array_keys($labels);
+    usort($values, fn($a, $b) => strcasecmp($labels[$a], $labels[$b]));
+
+    return ['values' => $values, 'labels' => $labels];
+}
+
+$familyFilterData = collectUniqueFamilies($rows);
 $sizeFilter   = collectUniqueFilterValues($rows, 'size', true);
 $angleFilter  = collectUniqueFilterValues($rows, 'angle', true);
 $heightFilter = collectUniqueFilterValues($rows, 'height', true);
 $radiusFilter = collectUniqueFilterValues($rows, 'radius', true);
 $seriesFilter = collectUniqueFilterValues($rows, 'series', false);
+
+$uniqueFamilies = $familyFilterData['values'];
+$familyLabelsFilter = $familyFilterData['labels'];
 
 $uniqueSizes   = $sizeFilter['values'];
 $uniqueAngles  = $angleFilter['values'];
@@ -655,6 +680,17 @@ $colCount = 8;
         <input type="search" id="filterSearch" placeholder="Name oder Modellcode …" oninput="applyFilters()">
     </div>
     <div class="filter-group">
+        <label>Familie</label>
+        <select id="filterFamily" onchange="applyFilters()">
+            <option value="">Alle</option>
+            <?php foreach ($uniqueFamilies as $val): ?>
+                <option value="<?php echo htmlspecialchars((string)$val); ?>">
+                    <?php echo htmlspecialchars($familyLabelsFilter[$val] ?? (string)$val); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+    </div>
+    <div class="filter-group">
         <label>V-Öffnung</label>
         <select id="filterSize" onchange="applyFilters()">
             <option value="">Alle</option>
@@ -742,7 +778,8 @@ $colCount = 8;
                 data-code="<?php echo strtolower(htmlspecialchars($row['code'])); ?>"
                 data-model="<?php echo htmlspecialchars($row['code']); ?>"
                 data-name="<?php echo strtolower(htmlspecialchars($row['name'])); ?>"
-                data-family="<?php echo strtolower(htmlspecialchars($row['familyLabel'])); ?>"
+                data-family="<?php echo htmlspecialchars($row['familyCode']); ?>"
+                data-family-label="<?php echo strtolower(htmlspecialchars($row['familyLabel'])); ?>"
                 data-size="<?php echo htmlspecialchars((string)($row['size']['raw'] ?? '')); ?>"
                 data-angle="<?php echo htmlspecialchars((string)($row['angle']['raw'] ?? '')); ?>"
                 data-height="<?php echo htmlspecialchars((string)($row['height']['raw'] ?? '')); ?>"
@@ -765,7 +802,7 @@ $colCount = 8;
                     <span class="model-code"><?php echo htmlspecialchars($row['code']); ?></span>
                     <span class="expand-hint">▶ Artikel / Längen anzeigen</span>
                 </td>
-                <td><span class="family-badge"><?php echo htmlspecialchars($row['familyLabel']); ?></span></td>
+                <td><span class="family-badge"><?php echo htmlspecialchars($row['familyLabel'] ?: ($row['familyCode'] ?: '–')); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['size']['display']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['angle']['display']); ?></span></td>
                 <td><span class="val-highlight"><?php echo htmlspecialchars($row['height']['display']); ?></span></td>
@@ -785,6 +822,7 @@ const variantCache = new Map();
 
 function applyFilters() {
     const search = document.getElementById('filterSearch').value.toLowerCase().trim();
+    const family = document.getElementById('filterFamily').value;
     const size   = document.getElementById('filterSize').value;
     const angle  = document.getElementById('filterAngle').value;
     const height = document.getElementById('filterHeight').value;
@@ -798,13 +836,14 @@ function applyFilters() {
         const matchSearch = !search
             || row.dataset.code.includes(search)
             || row.dataset.name.includes(search);
+        const matchFamily = !family || row.dataset.family === family;
         const matchSize   = !size   || row.dataset.size   === size;
         const matchAngle  = !angle  || row.dataset.angle  === angle;
         const matchHeight = !height || row.dataset.height === height;
         const matchRadius = !radius || row.dataset.radius === radius;
         const matchSeries = !series || row.dataset.series === series;
 
-        if (matchSearch && matchSize && matchAngle && matchHeight && matchRadius && matchSeries) {
+        if (matchSearch && matchFamily && matchSize && matchAngle && matchHeight && matchRadius && matchSeries) {
             row.classList.remove('hidden');
             visible++;
         } else {
@@ -819,6 +858,7 @@ function applyFilters() {
 
 function resetFilters() {
     document.getElementById('filterSearch').value = '';
+    document.getElementById('filterFamily').value  = '';
     document.getElementById('filterSize').value    = '';
     document.getElementById('filterAngle').value   = '';
     document.getElementById('filterHeight').value  = '';
@@ -849,7 +889,7 @@ function renderVariantTable(variants) {
         const statusClass = variant.status?.raw === 'active' ? 'status-active' : 'status-disabled';
         return `<tr>
             <td class="sku">${escapeHtml(variant.identifier)}</td>
-            <td>${escapeHtml(variant.name)}</td>
+            <td class="sku">${escapeHtml(variant.sapNumber?.display ?? '–')}</td>
             <td><span class="val-highlight">${escapeHtml(variant.length?.display ?? '–')}</span></td>
             <td>${escapeHtml(variant.radius?.display ?? '–')}</td>
             <td><span class="${statusClass}">${escapeHtml(variant.status?.display ?? '–')}</span></td>
@@ -860,7 +900,7 @@ function renderVariantTable(variants) {
         <thead>
             <tr>
                 <th>Artikelnummer</th>
-                <th>Bezeichnung</th>
+                <th>SAP-Nummer</th>
                 <th>Länge</th>
                 <th>Radius</th>
                 <th>Status</th>
@@ -938,7 +978,7 @@ function sortTable(col) {
 
     const dataAttrMap = {
         1: 'name',
-        2: 'family',
+        2: 'familyLabel',
         3: 'size',
         4: 'angle',
         5: 'height',

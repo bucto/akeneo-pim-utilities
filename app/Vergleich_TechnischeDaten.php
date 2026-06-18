@@ -123,8 +123,13 @@
 
         $rawData = $entry['data'];
 
-        if (is_array($rawData) && array_key_exists('amount', $rawData) && array_key_exists('unit', $rawData)) {
-            return formatAmount((string)$rawData['amount']) . ' ' . unitAbbr($rawData['unit']);
+        if (is_array($rawData) && array_key_exists('amount', $rawData)) {
+            $disp = formatAmount((string)$rawData['amount']);
+            $unit = $rawData['unit'] ?? $entry['unit'] ?? null;
+            if ($unit !== null && $unit !== '') {
+                $disp .= ' ' . unitAbbr((string)$unit);
+            }
+            return $disp;
         }
 
         if (is_array($rawData) && !array_key_exists('amount', $rawData)) {
