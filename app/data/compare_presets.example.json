@@ -1,0 +1,10 @@
+{
+  "families": {
+    "laser_cutting_machine": [
+      {
+        "label": "Einstiegsmodelle vergleichen",
+        "skus": ["LC2415", "LC3015"]
+      }
+    ]
+  }
+}

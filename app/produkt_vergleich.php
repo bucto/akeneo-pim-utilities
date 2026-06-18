@@ -36,7 +36,9 @@ function filterFamiliesForTab(array $allFamilies, string $tab, bool $hasConfig):
 $tabFamilies = filterFamiliesForTab($allFamilies, $activeTab, $hasConfig);
 
 // --- Produkte laden wenn Familie gewählt ---
-$products = [];
+$products           = [];
+$comparePresets      = [];
+$visibleIdentifiers  = [];
 if ($selectedFamily) {
     $products = getAkeneoProductsByFamily($selectedFamily);
 
@@ -44,6 +46,9 @@ if ($selectedFamily) {
     if ($filterStatus === 'active' && empty($products['active']) && !empty($products['disabled'])) {
         $filterStatus = 'disabled';
     }
+
+    $visibleIdentifiers = getVisibleProductIdentifiers($products, $filterStatus);
+    $comparePresets     = buildCompareSuggestionPresets($selectedFamily, $visibleIdentifiers);
 }
 
 // --- Hilfsfunktion: Tab-URL ---
@@ -303,6 +308,145 @@ $tabs = [
             margin: 20px 0 10px;
             color: var(--dark-gray);
         }
+        .section-title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 20px 0 10px;
+            flex-wrap: wrap;
+        }
+        .section-title-row .section-title {
+            margin: 0;
+        }
+        .help-toggle {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border: 1px solid var(--border);
+            border-radius: 50%;
+            background: #fff;
+            color: #4a5568;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .help-toggle:hover,
+        .help-toggle[aria-expanded="true"] {
+            background: var(--light-bg);
+            border-color: #a0aec0;
+            color: var(--dark-gray);
+        }
+        .suggestion-panel {
+            display: none;
+            margin-bottom: 16px;
+            padding: 14px 16px;
+            background: #f8fafc;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        .suggestion-panel.open {
+            display: block;
+        }
+        .suggestion-intro {
+            margin: 0 0 12px;
+            font-size: 13px;
+            color: #4a5568;
+            line-height: 1.45;
+        }
+        .suggestion-group-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            color: #718096;
+            margin: 0 0 8px;
+        }
+        .suggestion-group + .suggestion-group {
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .suggestion-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .suggestion-item {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 12px;
+            flex-wrap: wrap;
+            padding: 10px 12px;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 5px;
+        }
+        .suggestion-meta {
+            flex: 1;
+            min-width: 180px;
+        }
+        .suggestion-label {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--dark-gray);
+        }
+        .suggestion-skus {
+            display: block;
+            margin-top: 3px;
+            font-size: 12px;
+            color: #718096;
+            line-height: 1.35;
+            word-break: break-word;
+        }
+        .suggestion-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            align-items: center;
+        }
+        .suggestion-btn,
+        .suggestion-link {
+            display: inline-block;
+            padding: 6px 11px;
+            font-size: 12px;
+            font-weight: 600;
+            border-radius: 4px;
+            text-decoration: none;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: #fff;
+            color: #4a5568;
+            transition: background 0.15s, color 0.15s, border-color 0.15s;
+        }
+        .suggestion-btn:hover,
+        .suggestion-link:hover {
+            background: var(--light-bg);
+            color: var(--dark-gray);
+        }
+        .suggestion-btn.primary {
+            background: var(--dark-gray);
+            border-color: var(--dark-gray);
+            color: #fff;
+        }
+        .suggestion-btn.primary:hover {
+            background: #1a202c;
+            border-color: #1a202c;
+            color: #fff;
+        }
+        .suggestion-link.tech {
+            border-color: #cbd5e0;
+        }
+        .suggestion-link.ausstattung {
+            border-color: #fed7d7;
+            color: #9b2c2c;
+        }
+        .suggestion-link.ausstattung:hover {
+            background: #fff5f5;
+        }
     </style>
 </head>
 <body>
@@ -374,7 +518,75 @@ $tabs = [
             </div>
 
             <!-- Schritt 2: Produkte auswählen -->
-            <p class="section-title">Schritt 2: Produkte auswählen</p>
+            <div class="section-title-row">
+                <p class="section-title">Schritt 2: Produkte auswählen</p>
+                <?php if (!empty($comparePresets)): ?>
+                    <button type="button"
+                            class="help-toggle"
+                            id="suggestionHelpToggle"
+                            aria-expanded="false"
+                            aria-controls="suggestionPanel"
+                            title="Schnellauswahl anzeigen">?</button>
+                <?php endif; ?>
+            </div>
+
+            <?php if (!empty($comparePresets)): ?>
+                <div class="suggestion-panel" id="suggestionPanel" role="region" aria-label="Schnellauswahl">
+                    <p class="suggestion-intro">
+                        Nicht sicher, welche Maschinen Sie ankreuzen sollen? Nutzen Sie eine der Vorschläge —
+                        per Klick werden die passenden Maschinen ausgewählt oder der Vergleich direkt geöffnet.
+                    </p>
+
+                    <div class="suggestion-group">
+                        <p class="suggestion-group-title">Maschinen auswählen</p>
+                        <div class="suggestion-list">
+                            <?php foreach ($comparePresets as $preset): ?>
+                                <div class="suggestion-item">
+                                    <div class="suggestion-meta">
+                                        <span class="suggestion-label"><?php echo htmlspecialchars($preset['label']); ?></span>
+                                        <span class="suggestion-skus"><?php echo htmlspecialchars(implode(', ', $preset['skus'])); ?></span>
+                                    </div>
+                                    <div class="suggestion-actions">
+                                        <button type="button"
+                                                class="suggestion-btn primary"
+                                                data-preset-skus="<?php echo htmlspecialchars(implode(',', $preset['skus'])); ?>">
+                                            Auswählen
+                                        </button>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+
+                    <div class="suggestion-group">
+                        <p class="suggestion-group-title">Direkt vergleichen</p>
+                        <div class="suggestion-list">
+                            <?php foreach ($comparePresets as $preset):
+                                $skuList = $preset['skus'];
+                                $techUrl = buildCompareSkusUrl('Vergleich_TechnischeDaten.php', $skuList);
+                                $ausUrl  = buildCompareSkusUrl('Vergleich_Austattung.php', $skuList);
+                            ?>
+                                <div class="suggestion-item">
+                                    <div class="suggestion-meta">
+                                        <span class="suggestion-label"><?php echo htmlspecialchars($preset['label']); ?></span>
+                                        <span class="suggestion-skus"><?php echo count($skuList); ?> Maschine(n)</span>
+                                    </div>
+                                    <div class="suggestion-actions">
+                                        <a class="suggestion-link tech"
+                                           href="<?php echo htmlspecialchars($techUrl); ?>">
+                                            Tech. Daten →
+                                        </a>
+                                        <a class="suggestion-link ausstattung"
+                                           href="<?php echo htmlspecialchars($ausUrl); ?>">
+                                            Ausstattung →
+                                        </a>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+            <?php endif; ?>
 
             <form id="skuForm" action="#" method="get">
                 <!-- Versteckte Felder um Tab-Zustand beim Vergleich mitzugeben -->
@@ -391,7 +603,7 @@ $tabs = [
                 ?>
                 <p class="product-count"><?php echo $totalShown; ?> Produkt(e) gefunden</p>
 
-                <div class="checkbox-list">
+                <div class="checkbox-list" id="productCheckboxList">
                     <?php
                     $hasItems = false;
 
@@ -476,6 +688,39 @@ $tabs = [
 </div><!-- .container -->
 
 <script>
+(function () {
+    var helpToggle = document.getElementById('suggestionHelpToggle');
+    var panel      = document.getElementById('suggestionPanel');
+
+    if (helpToggle && panel) {
+        helpToggle.addEventListener('click', function () {
+            var open = panel.classList.toggle('open');
+            helpToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        });
+    }
+
+    document.querySelectorAll('[data-preset-skus]').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var skus = (btn.getAttribute('data-preset-skus') || '')
+                .split(',')
+                .map(function (s) { return s.trim(); })
+                .filter(Boolean);
+            var skuSet = {};
+
+            skus.forEach(function (sku) { skuSet[sku] = true; });
+
+            document.querySelectorAll('.sku-checkbox').forEach(function (cb) {
+                cb.checked = !!skuSet[cb.value];
+            });
+
+            var list = document.getElementById('productCheckboxList');
+            if (list) {
+                list.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        });
+    });
+})();
+
 document.getElementById('skuForm') && (document.getElementById('skuForm').onsubmit = function(e) {
     var checked = document.querySelectorAll('.sku-checkbox:checked');
     if (checked.length === 0) {

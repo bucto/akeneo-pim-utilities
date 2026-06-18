@@ -1151,3 +1151,127 @@ function getAkeneoProductsByParent(string $parentCode, array $onlyAttrs = []): a
 
     return sortBendingVariantProducts($products);
 }
+
+/**
+ * Identifier-Liste der aktuell sichtbaren Produkte (nach Status-Filter).
+ *
+ * @return string[]
+ */
+function getVisibleProductIdentifiers(array $productsByStatus, string $filterStatus): array {
+    $identifiers = [];
+
+    if ($filterStatus === 'active' || $filterStatus === 'all') {
+        foreach ($productsByStatus['active'] ?? [] as $product) {
+            $identifiers[] = $product['identifier'];
+        }
+    }
+    if ($filterStatus === 'disabled' || $filterStatus === 'all') {
+        foreach ($productsByStatus['disabled'] ?? [] as $product) {
+            $identifiers[] = $product['identifier'];
+        }
+    }
+
+    return $identifiers;
+}
+
+/**
+ * Optionale familienspezifische Vergleichs-Vorschläge aus app/data/compare_presets.json.
+ *
+ * @return array<int, array{label: string, skus: string[]}>
+ */
+function loadFamilyComparePresets(string $familyCode): array {
+    static $config = null;
+    if ($config === null) {
+        $path = __DIR__ . '/data/compare_presets.json';
+        if (!is_readable($path)) {
+            $config = [];
+        } else {
+            $decoded = json_decode((string)file_get_contents($path), true);
+            $config  = is_array($decoded) ? $decoded : [];
+        }
+    }
+
+    $entries = $config['families'][$familyCode] ?? [];
+    if (!is_array($entries)) {
+        return [];
+    }
+
+    $presets = [];
+    foreach ($entries as $entry) {
+        if (!is_array($entry) || empty($entry['label']) || empty($entry['skus']) || !is_array($entry['skus'])) {
+            continue;
+        }
+        $skus = array_values(array_filter(array_map('strval', $entry['skus'])));
+        if (count($skus) < 2) {
+            continue;
+        }
+        $presets[] = [
+            'label' => (string)$entry['label'],
+            'skus'  => $skus,
+        ];
+    }
+
+    return $presets;
+}
+
+/**
+ * Vorgefertigte Vergleichs-Vorschläge für eine Familie (JSON + automatisch).
+ *
+ * @return array<int, array{id: string, label: string, skus: string[], kind: string}>
+ */
+function buildCompareSuggestionPresets(string $familyCode, array $identifiers): array {
+    if (count($identifiers) < 2) {
+        return [];
+    }
+
+    $available = array_flip($identifiers);
+    $presets   = [];
+
+    foreach (loadFamilyComparePresets($familyCode) as $custom) {
+        $skus = array_values(array_filter(
+            $custom['skus'],
+            fn($sku) => isset($available[$sku])
+        ));
+        if (count($skus) < 2) {
+            continue;
+        }
+        $presets[] = [
+            'id'    => 'custom_' . substr(md5($custom['label'] . implode(',', $skus)), 0, 8),
+            'label' => $custom['label'],
+            'skus'  => $skus,
+            'kind'  => 'custom',
+        ];
+    }
+
+    $autoDefs = [
+        ['id' => 'latest_2', 'label' => 'Neueste 2 Maschinen', 'count' => 2],
+        ['id' => 'latest_3', 'label' => 'Neueste 3 Maschinen', 'count' => 3],
+        ['id' => 'latest_5', 'label' => 'Neueste 5 Maschinen', 'count' => 5],
+    ];
+    foreach ($autoDefs as $def) {
+        if (count($identifiers) >= $def['count']) {
+            $presets[] = [
+                'id'    => 'auto_' . $def['id'],
+                'label' => $def['label'],
+                'skus'  => array_slice($identifiers, 0, $def['count']),
+                'kind'  => 'auto',
+            ];
+        }
+    }
+
+    if (count($identifiers) >= 2) {
+        $presets[] = [
+            'id'    => 'auto_all_visible',
+            'label' => 'Alle angezeigten Maschinen',
+            'skus'  => $identifiers,
+            'kind'  => 'auto',
+        ];
+    }
+
+    return $presets;
+}
+
+/** URL zur Vergleichsseite mit vorausgewählten SKUs. */
+function buildCompareSkusUrl(string $targetPage, array $skus): string {
+    return $targetPage . '?' . http_build_query(['skus' => implode(',', $skus)]);
+}
