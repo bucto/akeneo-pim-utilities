@@ -36,10 +36,8 @@ function filterFamiliesForTab(array $allFamilies, string $tab, bool $hasConfig):
 $tabFamilies = filterFamiliesForTab($allFamilies, $activeTab, $hasConfig);
 
 // --- Produkte laden wenn Familie gewählt ---
-$products           = [];
-$comparePresets      = [];
-$compareLinks        = [];
-$visibleIdentifiers  = [];
+$products     = [];
+$compareLinks = [];
 if ($selectedFamily) {
     $products = getAkeneoProductsByFamily($selectedFamily);
 
@@ -48,12 +46,8 @@ if ($selectedFamily) {
         $filterStatus = 'disabled';
     }
 
-    $visibleIdentifiers = getVisibleProductIdentifiers($products, $filterStatus);
-    $comparePresets     = buildCompareSuggestionPresets($selectedFamily, $visibleIdentifiers);
-    $compareLinks       = getCompareLinksForFamily($selectedFamily);
+    $compareLinks = getCompareLinksForFamily($selectedFamily);
 }
-
-$hasSuggestions = !empty($comparePresets) || !empty($compareLinks);
 
 // --- Hilfsfunktion: Tab-URL ---
 function tabUrl(string $tab, ?string $family = null, string $status = 'active'): string {
@@ -412,42 +406,6 @@ $tabs = [
             gap: 6px;
             align-items: center;
         }
-        .suggestion-btn,
-        .suggestion-link {
-            display: inline-block;
-            padding: 6px 11px;
-            font-size: 12px;
-            font-weight: 600;
-            border-radius: 4px;
-            text-decoration: none;
-            cursor: pointer;
-            border: 1px solid var(--border);
-            background: #fff;
-            color: #4a5568;
-            transition: background 0.15s, color 0.15s, border-color 0.15s;
-        }
-        .suggestion-btn:hover,
-        .suggestion-link:hover {
-            background: var(--light-bg);
-            color: var(--dark-gray);
-        }
-        .suggestion-btn.primary {
-            background: var(--dark-gray);
-            border-color: var(--dark-gray);
-            color: #fff;
-        }
-        .suggestion-btn.primary:hover {
-            background: #1a202c;
-            border-color: #1a202c;
-            color: #fff;
-        }
-        .suggestion-link.tech {
-            border-color: #cbd5e0;
-        }
-        .suggestion-link.ausstattung {
-            border-color: #fed7d7;
-            color: #9b2c2c;
-        }
         .suggestion-link-db {
             display: inline-block;
             padding: 8px 14px;
@@ -463,9 +421,6 @@ $tabs = [
         .suggestion-link-db:hover {
             background: #1a202c;
             color: #fff;
-        }
-        .suggestion-link.ausstattung:hover {
-            background: #fff5f5;
         }
     </style>
 </head>
@@ -540,7 +495,7 @@ $tabs = [
             <!-- Schritt 2: Produkte auswählen -->
             <div class="section-title-row">
                 <p class="section-title">Schritt 2: Produkte auswählen</p>
-                <?php if ($hasSuggestions): ?>
+                <?php if (!empty($compareLinks)): ?>
                     <button type="button"
                             class="help-toggle"
                             id="suggestionHelpToggle"
@@ -550,85 +505,30 @@ $tabs = [
                 <?php endif; ?>
             </div>
 
-            <?php if ($hasSuggestions): ?>
+            <?php if (!empty($compareLinks)): ?>
                 <div class="suggestion-panel" id="suggestionPanel" role="region" aria-label="Schnellauswahl">
                     <p class="suggestion-intro">
-                        Nicht sicher, welche Maschinen Sie ankreuzen sollen? Nutzen Sie eine der Vorschläge —
-                        per Klick werden passende Maschinen ausgewählt, ein Vergleich geöffnet oder ein vorgefertigter Link aufgerufen.
+                        Vorgefertigte Vergleichs-Links für diese Produktfamilie — ein Klick öffnet den Vergleich direkt.
                     </p>
 
-                    <?php if (!empty($compareLinks)): ?>
-                        <div class="suggestion-group">
-                            <p class="suggestion-group-title">Vorgefertigte Links</p>
-                            <div class="suggestion-list">
-                                <?php foreach ($compareLinks as $link): ?>
-                                    <div class="suggestion-item">
-                                        <div class="suggestion-meta">
-                                            <span class="suggestion-label"><?php echo htmlspecialchars($link['name']); ?></span>
-                                            <span class="suggestion-skus"><?php echo htmlspecialchars($link['url']); ?></span>
-                                        </div>
-                                        <div class="suggestion-actions">
-                                            <a class="suggestion-link-db"
-                                               href="<?php echo htmlspecialchars($link['url']); ?>">
-                                                Öffnen →
-                                            </a>
-                                        </div>
-                                    </div>
-                                <?php endforeach; ?>
-                            </div>
-                        </div>
-                    <?php endif; ?>
-
-                    <?php if (!empty($comparePresets)): ?>
                     <div class="suggestion-group">
-                        <p class="suggestion-group-title">Maschinen auswählen</p>
                         <div class="suggestion-list">
-                            <?php foreach ($comparePresets as $preset): ?>
+                            <?php foreach ($compareLinks as $link): ?>
                                 <div class="suggestion-item">
                                     <div class="suggestion-meta">
-                                        <span class="suggestion-label"><?php echo htmlspecialchars($preset['label']); ?></span>
-                                        <span class="suggestion-skus"><?php echo htmlspecialchars(implode(', ', $preset['skus'])); ?></span>
+                                        <span class="suggestion-label"><?php echo htmlspecialchars($link['name']); ?></span>
+                                        <span class="suggestion-skus"><?php echo htmlspecialchars($link['url']); ?></span>
                                     </div>
                                     <div class="suggestion-actions">
-                                        <button type="button"
-                                                class="suggestion-btn primary"
-                                                data-preset-skus="<?php echo htmlspecialchars(implode(',', $preset['skus'])); ?>">
-                                            Auswählen
-                                        </button>
-                                    </div>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
-
-                    <div class="suggestion-group">
-                        <p class="suggestion-group-title">Direkt vergleichen</p>
-                        <div class="suggestion-list">
-                            <?php foreach ($comparePresets as $preset):
-                                $skuList = $preset['skus'];
-                                $techUrl = buildCompareSkusUrl('Vergleich_TechnischeDaten.php', $skuList);
-                                $ausUrl  = buildCompareSkusUrl('Vergleich_Austattung.php', $skuList);
-                            ?>
-                                <div class="suggestion-item">
-                                    <div class="suggestion-meta">
-                                        <span class="suggestion-label"><?php echo htmlspecialchars($preset['label']); ?></span>
-                                        <span class="suggestion-skus"><?php echo count($skuList); ?> Maschine(n)</span>
-                                    </div>
-                                    <div class="suggestion-actions">
-                                        <a class="suggestion-link tech"
-                                           href="<?php echo htmlspecialchars($techUrl); ?>">
-                                            Tech. Daten →
-                                        </a>
-                                        <a class="suggestion-link ausstattung"
-                                           href="<?php echo htmlspecialchars($ausUrl); ?>">
-                                            Ausstattung →
+                                        <a class="suggestion-link-db"
+                                           href="<?php echo htmlspecialchars($link['url']); ?>">
+                                            Öffnen →
                                         </a>
                                     </div>
                                 </div>
                             <?php endforeach; ?>
                         </div>
                     </div>
-                    <?php endif; ?>
                 </div>
             <?php endif; ?>
 
@@ -742,27 +642,6 @@ $tabs = [
             helpToggle.setAttribute('aria-expanded', open ? 'true' : 'false');
         });
     }
-
-    document.querySelectorAll('[data-preset-skus]').forEach(function (btn) {
-        btn.addEventListener('click', function () {
-            var skus = (btn.getAttribute('data-preset-skus') || '')
-                .split(',')
-                .map(function (s) { return s.trim(); })
-                .filter(Boolean);
-            var skuSet = {};
-
-            skus.forEach(function (sku) { skuSet[sku] = true; });
-
-            document.querySelectorAll('.sku-checkbox').forEach(function (cb) {
-                cb.checked = !!skuSet[cb.value];
-            });
-
-            var list = document.getElementById('productCheckboxList');
-            if (list) {
-                list.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-        });
-    });
 })();
 
 document.getElementById('skuForm') && (document.getElementById('skuForm').onsubmit = function(e) {
