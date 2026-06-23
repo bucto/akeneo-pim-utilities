@@ -121,6 +121,8 @@
         <a href="pim_family_settings.php">Admin: PIM-Familien</a>
         &nbsp;·&nbsp;
         <a href="compare_links_settings.php">Vergleichs-Links</a>
+        &nbsp;·&nbsp;
+        <a href="series_create.php">Serie anlegen</a>
     </div>
     <?php endif; ?>
 </div>

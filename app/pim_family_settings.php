@@ -262,6 +262,7 @@ usort($mergedFamilies, fn($a, $b) => strcasecmp($a['label'], $b['label']));
         <h1>PIM-Familien konfigurieren</h1>
         <div class="header-actions">
             <a href="compare_links_settings.php" class="btn btn-ghost">Vergleichs-Links</a>
+            <a href="series_create.php" class="btn btn-ghost">Serie anlegen</a>
             <a href="index.php" class="btn btn-ghost">← Startseite</a>
         </div>
     </div>

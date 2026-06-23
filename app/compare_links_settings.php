@@ -229,6 +229,7 @@ usort($akFamilies, fn($a, $b) => strcasecmp(
         <h1>Vergleichs-Links</h1>
         <div class="header-actions">
             <a href="pim_family_settings.php" class="btn btn-ghost">PIM-Familien</a>
+            <a href="series_create.php" class="btn btn-ghost">Serie anlegen</a>
             <a href="index.php" class="btn btn-ghost">← Startseite</a>
         </div>
     </div>

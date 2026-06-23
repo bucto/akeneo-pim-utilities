@@ -41,6 +41,10 @@ define('PIM_COMPARE_EXCLUDE_ATTRS', getenv('PIM_COMPARE_EXCLUDE_ATTRS') ?: 'file
 define('PIM_BUILD_YEAR_ATTR', getenv('PIM_BUILD_YEAR_ATTR') ?: 'build_year');
 define('PIM_BUILT_UNTIL_ATTR', getenv('PIM_BUILT_UNTIL_ATTR') ?: 'was_built_until');
 define('PIM_SERIES_FAMILY', getenv('PIM_SERIES_FAMILY') ?: 'series');
+// Übergeordnete Kategorie für neu angelegte Serien (z. B. bending_tools, shearing_machines)
+define('PIM_SERIES_CATEGORY_PARENT', getenv('PIM_SERIES_CATEGORY_PARENT') ?: 'master');
+define('PIM_SERIES_NAME_ATTR', getenv('PIM_SERIES_NAME_ATTR') ?: 'series_name');
+define('PIM_SERIES_PRODUCT_NAME_ATTR', getenv('PIM_SERIES_PRODUCT_NAME_ATTR') ?: 'product_name');
 
 // --- Abkantwerkzeug-Attribute (kommagetrennte Fallback-Kette) ---
 define('PIM_BENDING_HEIGHT_ATTRS', getenv('PIM_BENDING_HEIGHT_ATTRS') ?: 'tool_height');

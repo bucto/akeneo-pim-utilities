@@ -1219,3 +1219,272 @@ function getAkeneoProductsByParent(string $parentCode, array $onlyAttrs = []): a
 
     return sortBendingVariantProducts($products);
 }
+
+/**
+ * PATCH/POST gegen die Akeneo API (JSON-Body).
+ *
+ * @return array{ok: bool, status: int, response: array}
+ */
+function apiWrite(string $method, string $url, string $accessToken, ?array $body = null): array {
+    clearLastApiError();
+
+    $headers = [
+        "Authorization: Bearer $accessToken",
+        "Content-Type: application/json",
+    ];
+    $content = ($body !== null) ? json_encode($body, JSON_UNESCAPED_UNICODE) : '';
+
+    $context = makeApiContext($method, $headers, $content);
+    $result  = @file_get_contents($url, false, $context);
+
+    $status = 0;
+    if (!empty($http_response_header[0]) && preg_match('/\d{3}/', $http_response_header[0], $m)) {
+        $status = (int)$m[0];
+    }
+
+    if ($result === false) {
+        $GLOBALS['_akeneo_last_api_error'] = "HTTP-Anfrage fehlgeschlagen ($method): $url";
+        return ['ok' => false, 'status' => $status, 'response' => []];
+    }
+
+    $decoded = ($result === '' || $result === false) ? [] : json_decode($result, true);
+    if (!is_array($decoded)) {
+        $decoded = [];
+    }
+
+    if ($status >= 400 || isset($decoded['code'])) {
+        $GLOBALS['_akeneo_last_api_error'] = trim(
+            ($decoded['message'] ?? "HTTP $status") . (isset($decoded['code']) ? ' [' . $decoded['code'] . ']' : '')
+        );
+        return ['ok' => false, 'status' => $status, 'response' => $decoded];
+    }
+
+    return ['ok' => true, 'status' => $status, 'response' => $decoded];
+}
+
+function apiPatch(string $url, string $accessToken, array $body): array {
+    return apiWrite('PATCH', $url, $accessToken, $body);
+}
+
+function getAkeneoAttributeMeta(string $attrCode): array {
+    static $cache = [];
+
+    if (!isset($cache[$attrCode])) {
+        $resp = apiGet(API_BASE_URL . '/attributes/' . urlencode($attrCode), getAccessToken());
+        $cache[$attrCode] = [
+            'scopable'     => (bool)($resp['scopable'] ?? false),
+            'localizable'  => (bool)($resp['localizable'] ?? false),
+        ];
+    }
+
+    return $cache[$attrCode];
+}
+
+/** Ein Akeneo-Werte-Eintrag für PATCH (Scope/Locale aus Attribut-Metadaten). */
+function buildPimValueEntry(string $attrCode, mixed $data): array {
+    $meta = getAkeneoAttributeMeta($attrCode);
+
+    return [
+        'locale' => $meta['localizable'] ? PIM_LOCALE : null,
+        'scope'  => $meta['scopable'] ? PIM_CHANNEL : null,
+        'data'   => $data,
+    ];
+}
+
+function getAkeneoCategory(string $code): ?array {
+    if ($code === '') {
+        return null;
+    }
+
+    $resp = apiGet(API_BASE_URL . '/categories/' . urlencode($code), getAccessToken());
+    if (!$resp || isset($resp['code']) || empty($resp['code'])) {
+        return null;
+    }
+
+    return $resp;
+}
+
+/**
+ * Kategorien für Auswahllisten (paginiert, optional nach Parent).
+ *
+ * @return array<int, array{code: string, parent: ?string, label: string}>
+ */
+function getAkeneoCategoriesList(?string $parentCode = null, int $maxPages = 20): array {
+    $accessToken = getAccessToken();
+    $categories  = [];
+    $page        = 1;
+    $limit       = 100;
+
+    $searchParams = [];
+    if ($parentCode === '') {
+        $searchParams['parent'] = [['operator' => 'EMPTY']];
+    } elseif ($parentCode !== null) {
+        $searchParams['parent'] = [['operator' => '=', 'value' => $parentCode]];
+    }
+
+    $searchQuery = empty($searchParams)
+        ? ''
+        : ('&search=' . urlencode(json_encode($searchParams)));
+
+    while ($page <= $maxPages) {
+        $url      = API_BASE_URL . "/categories?limit={$limit}&page={$page}{$searchQuery}";
+        $response = apiGet($url, $accessToken);
+        if ($response === null || isset($response['code'])) {
+            break;
+        }
+
+        foreach ($response['_embedded']['items'] ?? [] as $item) {
+            $categories[] = [
+                'code'   => $item['code'],
+                'parent' => $item['parent'] ?? null,
+                'label'  => pimLabel($item['labels'] ?? [], $item['code']),
+            ];
+        }
+
+        $items = $response['_embedded']['items'] ?? [];
+        if (!isset($response['_links']['next']) || count($items) < $limit) {
+            break;
+        }
+        $page++;
+    }
+
+    usort($categories, fn($a, $b) => strcasecmp($a['label'], $b['label']));
+
+    return $categories;
+}
+
+/**
+ * Legt eine Serie im PIM an: Produkt (Familie series) + Kategorie mit identischem Code.
+ * Kategorie-Code = Produkt-Identifier (AMADA-Konvention für Baujahr-Vergleich).
+ *
+ * @param array{
+ *   code: string,
+ *   label?: string,
+ *   parentCategory?: string,
+ *   buildYear?: string|int|null,
+ *   builtUntil?: string|int|null,
+ *   productName?: string,
+ *   seriesName?: string,
+ *   enabled?: bool,
+ * } $params
+ * @return array{ok: bool, code?: string, error?: string, step?: string, productCreated?: bool, categoryCreated?: bool}
+ */
+function createPimSeries(array $params): array {
+    $code = trim((string)($params['code'] ?? ''));
+    if ($code === '') {
+        return ['ok' => false, 'error' => 'Code fehlt.'];
+    }
+    if (!preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_\-]*$/', $code)) {
+        return ['ok' => false, 'error' => 'Ungültiger Code (nur Buchstaben, Zahlen, _, -).'];
+    }
+
+    $parentCategory = trim((string)($params['parentCategory'] ?? PIM_SERIES_CATEGORY_PARENT));
+    if ($parentCategory === '') {
+        return ['ok' => false, 'error' => 'Übergeordnete Kategorie fehlt.'];
+    }
+
+    if (getAkeneoProduct($code)) {
+        return ['ok' => false, 'error' => "Produkt mit Identifier „{$code}“ existiert bereits."];
+    }
+    if (getAkeneoCategory($code)) {
+        return ['ok' => false, 'error' => "Kategorie mit Code „{$code}“ existiert bereits."];
+    }
+    if (!getAkeneoCategory($parentCategory)) {
+        return ['ok' => false, 'error' => "Übergeordnete Kategorie „{$parentCategory}“ nicht gefunden."];
+    }
+
+    $label       = trim((string)($params['label'] ?? $code));
+    $enabled     = ($params['enabled'] ?? true) !== false;
+    $accessToken = getAccessToken();
+
+    $values = [];
+    if (($params['productName'] ?? '') !== '') {
+        $values[PIM_SERIES_PRODUCT_NAME_ATTR] = [
+            buildPimValueEntry(PIM_SERIES_PRODUCT_NAME_ATTR, (string)$params['productName']),
+        ];
+    }
+    if (($params['seriesName'] ?? '') !== '') {
+        $values[PIM_SERIES_NAME_ATTR] = [
+            buildPimValueEntry(PIM_SERIES_NAME_ATTR, (string)$params['seriesName']),
+        ];
+    }
+    if (($params['buildYear'] ?? '') !== '' && $params['buildYear'] !== null) {
+        $year = is_numeric($params['buildYear']) ? (int)$params['buildYear'] : (string)$params['buildYear'];
+        $values[PIM_BUILD_YEAR_ATTR] = [buildPimValueEntry(PIM_BUILD_YEAR_ATTR, $year)];
+    }
+    if (($params['builtUntil'] ?? '') !== '' && $params['builtUntil'] !== null) {
+        $until = is_numeric($params['builtUntil']) ? (int)$params['builtUntil'] : (string)$params['builtUntil'];
+        $values[PIM_BUILT_UNTIL_ATTR] = [buildPimValueEntry(PIM_BUILT_UNTIL_ATTR, $until)];
+    }
+
+    // 1) Produkt zuerst anlegen (Identifier = späterer Kategorie-Code)
+    $productBody = [
+        'identifier' => $code,
+        'family'     => PIM_SERIES_FAMILY,
+        'enabled'    => $enabled,
+        'categories' => [],
+        'values'     => $values,
+    ];
+
+    $productResult = apiPatch(
+        API_BASE_URL . '/products/' . rawurlencode($code),
+        $accessToken,
+        $productBody
+    );
+    if (!$productResult['ok']) {
+        return [
+            'ok'    => false,
+            'step'  => 'product',
+            'error' => getLastApiError() ?? 'Produkt konnte nicht angelegt werden.',
+        ];
+    }
+
+    // 2) Kategorie mit gleichem Code
+    $categoryBody = [
+        'code'   => $code,
+        'parent' => $parentCategory,
+        'labels' => [
+            PIM_LOCALE => $label,
+            'en_US'    => $label,
+        ],
+    ];
+
+    $categoryResult = apiPatch(
+        API_BASE_URL . '/categories/' . rawurlencode($code),
+        $accessToken,
+        $categoryBody
+    );
+    if (!$categoryResult['ok']) {
+        return [
+            'ok'              => false,
+            'step'            => 'category',
+            'error'           => getLastApiError() ?? 'Kategorie konnte nicht angelegt werden.',
+            'productCreated'  => true,
+            'code'            => $code,
+        ];
+    }
+
+    // 3) Produkt der neuen Kategorie zuordnen
+    $assignResult = apiPatch(
+        API_BASE_URL . '/products/' . rawurlencode($code),
+        $accessToken,
+        ['categories' => [$code]]
+    );
+    if (!$assignResult['ok']) {
+        return [
+            'ok'              => false,
+            'step'            => 'assign',
+            'error'           => getLastApiError() ?? 'Kategorie konnte dem Produkt nicht zugewiesen werden.',
+            'productCreated'  => true,
+            'categoryCreated' => true,
+            'code'            => $code,
+        ];
+    }
+
+    return [
+        'ok'              => true,
+        'code'            => $code,
+        'productCreated'  => true,
+        'categoryCreated' => true,
+    ];
+}
