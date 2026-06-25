@@ -56,6 +56,17 @@ function tabUrl(string $tab, ?string $family = null, string $status = 'active'):
     return 'produkt_vergleich.php?' . http_build_query($params);
 }
 
+function vergleichReloadUrl(): string {
+    $params = $_GET;
+    $params['reload'] = '1';
+    return 'produkt_vergleich.php?' . http_build_query($params);
+}
+
+$familiesCacheMeta = pimApiCacheMeta('families_v1');
+$productsCacheMeta = $selectedFamily
+    ? pimApiCacheMeta('products_family_' . $selectedFamily . '_v1')
+    : null;
+
 $tabs = [
     'products'       => 'Maschinen',
     'automation'     => 'Automation',
@@ -99,6 +110,16 @@ $tabs = [
             border-bottom: 3px solid var(--amada-red);
             padding-bottom: 8px;
         }
+        .cache-info {
+            font-size: 12px;
+            color: #a0aec0;
+            margin-top: 6px;
+        }
+        .cache-info a {
+            color: #718096;
+            text-decoration: none;
+        }
+        .cache-info a:hover { color: var(--amada-red); }
         .settings-link {
             font-size: 13px;
             color: #718096;
@@ -447,7 +468,20 @@ $tabs = [
 <div class="container">
 
     <div class="page-head">
-        <h1>Produkt-Vergleich</h1>
+        <div>
+            <h1>Produkt-Vergleich</h1>
+            <?php if (PIM_API_CACHE_ENABLED && ($familiesCacheMeta || $productsCacheMeta)): ?>
+                <div class="cache-info">
+                    <?php
+                    $meta = $productsCacheMeta ?? $familiesCacheMeta;
+                    if ($meta):
+                    ?>
+                        Daten gecacht (vor <?php echo max(1, (int)round($meta['age'] / 60)); ?> Min.)
+                        · <a href="<?php echo htmlspecialchars(vergleichReloadUrl()); ?>">Neu laden</a>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+        </div>
     </div>
 
     <!-- Tab-Leiste -->

@@ -59,3 +59,7 @@ define('PIM_BENDING_SIZE_ATTRS', getenv('PIM_BENDING_SIZE_ATTRS') ?: 'bendingtoo
 define('PIM_BENDING_ANGLE_ATTRS', getenv('PIM_BENDING_ANGLE_ATTRS') ?: 'bendingtool_die_1v_angle,bendingtool_die_4v_angle');
 // Serie-Filter (z. B. afh) — leer = alle Serien
 define('PIM_BENDING_SERIES_FILTER', getenv('PIM_BENDING_SERIES_FILTER') ?: 'afh');
+
+// API-Response-Cache für Pulldowns (Familien, Produkte pro Familie, Kategorien)
+define('PIM_API_CACHE_ENABLED', filter_var(getenv('PIM_API_CACHE_ENABLED') ?: 'true', FILTER_VALIDATE_BOOLEAN));
+define('PIM_API_CACHE_TTL', (int)(getenv('PIM_API_CACHE_TTL') ?: 1800)); // 30 Minuten

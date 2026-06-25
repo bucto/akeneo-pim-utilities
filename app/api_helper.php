@@ -88,6 +88,79 @@ function getLastApiError(): ?string {
     return $GLOBALS['_akeneo_last_api_error'] ?? null;
 }
 
+/** Verzeichnis für API-Response-Cache (Pulldowns). */
+function pimApiCacheDir(): string {
+    $dir = sys_get_temp_dir() . '/akeneo_pim_api_cache';
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    return $dir;
+}
+
+function pimApiCachePath(string $key): string {
+    $safe = preg_replace('/[^a-zA-Z0-9_\-]/', '_', $key);
+    return pimApiCacheDir() . '/' . $safe . '.json';
+}
+
+/** Cache umgehen per ?reload=1 oder ?nocache=1 */
+function pimApiCacheIsBypassed(): bool {
+    return !empty($_GET['reload']) || !empty($_GET['nocache']);
+}
+
+/**
+ * Gecachte API-Antwort lesen.
+ *
+ * @template T
+ * @param callable(): T $fetcher
+ * @return T
+ */
+function pimApiCacheRemember(string $key, callable $fetcher) {
+    static $requestCache = [];
+    if (array_key_exists($key, $requestCache)) {
+        return $requestCache[$key];
+    }
+
+    if (PIM_API_CACHE_ENABLED && !pimApiCacheIsBypassed()) {
+        $path = pimApiCachePath($key);
+        if (is_readable($path)) {
+            $age = time() - filemtime($path);
+            if ($age <= PIM_API_CACHE_TTL) {
+                $decoded = json_decode((string)file_get_contents($path), true);
+                if (is_array($decoded)) {
+                    return $requestCache[$key] = $decoded;
+                }
+            }
+        }
+    }
+
+    $data = $fetcher();
+    if (PIM_API_CACHE_ENABLED && is_array($data)) {
+        @file_put_contents(pimApiCachePath($key), json_encode($data, JSON_UNESCAPED_UNICODE));
+    }
+
+    return $requestCache[$key] = $data;
+}
+
+/** Cache-Metadaten für Anzeige (Alter in Sekunden, Zeitstempel). */
+function pimApiCacheMeta(string $key): ?array {
+    if (!PIM_API_CACHE_ENABLED || pimApiCacheIsBypassed()) {
+        return null;
+    }
+    $path = pimApiCachePath($key);
+    if (!is_readable($path)) {
+        return null;
+    }
+    $mtime = filemtime($path);
+    if ($mtime === false) {
+        return null;
+    }
+    $age = time() - $mtime;
+    if ($age > PIM_API_CACHE_TTL) {
+        return null;
+    }
+    return ['cached_at' => $mtime, 'age' => $age];
+}
+
 /** scope + locale für Produkt-/Modell-Abfragen. */
 function pimContextQuery(): string {
     return '&scope=' . urlencode(PIM_CHANNEL) . '&locale=' . urlencode(PIM_LOCALE);
@@ -381,33 +454,41 @@ function extractBendingShoulderRadius(array $entity): array {
  * Holt alle Produktfamilien aus Akeneo.
  */
 function getAkeneoFamilies(): array {
-    $accessToken = getAccessToken();
-    $allFamilies = [];
-    $page        = 1;
-    $limit       = 100;
+    return pimApiCacheRemember('families_v1', function (): array {
+        $accessToken = getAccessToken();
+        $allFamilies = [];
+        $page        = 1;
+        $limit       = 100;
 
-    while (true) {
-        $response = apiGet(API_BASE_URL . "/families?limit={$limit}&page={$page}", $accessToken);
+        while (true) {
+            $response = apiGet(API_BASE_URL . "/families?limit={$limit}&page={$page}", $accessToken);
 
-        if ($response === null || isset($response['code'])) break;
+            if ($response === null || isset($response['code'])) {
+                break;
+            }
 
-        $items = $response['_embedded']['items'] ?? [];
-        if (empty($items)) break;
+            $items = $response['_embedded']['items'] ?? [];
+            if (empty($items)) {
+                break;
+            }
 
-        $allFamilies = array_merge($allFamilies, $items);
+            $allFamilies = array_merge($allFamilies, $items);
 
-        if (!isset($response['_links']['next']) || count($items) < $limit) break;
+            if (!isset($response['_links']['next']) || count($items) < $limit) {
+                break;
+            }
 
-        $page++;
-    }
+            $page++;
+        }
 
-    usort($allFamilies, function($a, $b) {
-        $labelA = pimLabel($a['labels'] ?? [], $a['code']);
-        $labelB = pimLabel($b['labels'] ?? [], $b['code']);
-        return strcasecmp($labelA, $labelB);
+        usort($allFamilies, function ($a, $b) {
+            $labelA = pimLabel($a['labels'] ?? [], $a['code']);
+            $labelB = pimLabel($b['labels'] ?? [], $b['code']);
+            return strcasecmp($labelA, $labelB);
+        });
+
+        return $allFamilies;
     });
-
-    return $allFamilies;
 }
 
 /** Familien-Code => Anzeigename (alle Akeneo-Familien). */
@@ -1052,45 +1133,59 @@ function extractProductName(array $entity, ?string $locale = null): ?string {
  * und ergänzt jeweils die erste Bild-URL.
  */
 function getAkeneoProductsByFamily(string $familyCode): array {
-    $accessToken = getAccessToken();
-    $allProducts = [];
-    $page        = 1;
-    $limit       = 100;
-
-    while (true) {
-        $searchParams = ['family' => [['operator' => 'IN', 'value' => [$familyCode]]]];
-        $url          = API_BASE_URL . "/products?search=" . urlencode(json_encode($searchParams))
-                        . "&page=$page&limit=$limit";
-
-        $response = apiGet($url, $accessToken);
-
-        if ($response === null || isset($response['code'])) break;
-        if (empty($response['_embedded']['items'])) break;
-
-        $allProducts = array_merge($allProducts, $response['_embedded']['items']);
-
-        if (!isset($response['_links']['next']) || count($response['_embedded']['items']) < $limit) break;
-
-        $page++;
+    if ($familyCode === '') {
+        return ['active' => [], 'disabled' => []];
     }
 
-    $activeProducts   = [];
-    $disabledProducts = [];
+    $cacheKey = 'products_family_' . $familyCode . '_v1';
 
-    foreach ($allProducts as $product) {
-        $product['_imageUrl'] = extractProductImageUrl($product);
+    return pimApiCacheRemember($cacheKey, function () use ($familyCode): array {
+        $accessToken = getAccessToken();
+        $allProducts = [];
+        $page        = 1;
+        $limit       = 100;
 
-        if (isset($product['enabled']) && $product['enabled'] === false) {
-            $disabledProducts[] = $product;
-        } else {
-            $activeProducts[] = $product;
+        while (true) {
+            $searchParams = ['family' => [['operator' => 'IN', 'value' => [$familyCode]]]];
+            $url          = API_BASE_URL . '/products?search=' . urlencode(json_encode($searchParams))
+                            . "&page=$page&limit=$limit";
+
+            $response = apiGet($url, $accessToken);
+
+            if ($response === null || isset($response['code'])) {
+                break;
+            }
+            if (empty($response['_embedded']['items'])) {
+                break;
+            }
+
+            $allProducts = array_merge($allProducts, $response['_embedded']['items']);
+
+            if (!isset($response['_links']['next']) || count($response['_embedded']['items']) < $limit) {
+                break;
+            }
+
+            $page++;
         }
-    }
 
-    $activeProducts   = sortProductsByBuildYearDesc($activeProducts);
-    $disabledProducts = sortProductsByBuildYearDesc($disabledProducts);
+        $activeProducts   = [];
+        $disabledProducts = [];
 
-    return ['active' => $activeProducts, 'disabled' => $disabledProducts];
+        foreach ($allProducts as $product) {
+            $product['_imageUrl'] = extractProductImageUrl($product);
+
+            if (isset($product['enabled']) && $product['enabled'] === false) {
+                $disabledProducts[] = $product;
+            } else {
+                $activeProducts[] = $product;
+            }
+        }
+
+        $activeProducts   = sortProductsByBuildYearDesc($activeProducts);
+        $disabledProducts = sortProductsByBuildYearDesc($disabledProducts);
+
+        return ['active' => $activeProducts, 'disabled' => $disabledProducts];
+    });
 }
 
 /**
@@ -1310,47 +1405,52 @@ function getAkeneoCategory(string $code): ?array {
  * @return array<int, array{code: string, parent: ?string, label: string}>
  */
 function getAkeneoCategoriesList(?string $parentCode = null, int $maxPages = 20): array {
-    $accessToken = getAccessToken();
-    $categories  = [];
-    $page        = 1;
-    $limit       = 100;
+    $parentKey = $parentCode === null ? 'all' : ($parentCode === '' ? 'root' : $parentCode);
+    $cacheKey  = 'categories_' . $parentKey . '_v1';
 
-    $searchParams = [];
-    if ($parentCode === '') {
-        $searchParams['parent'] = [['operator' => 'EMPTY']];
-    } elseif ($parentCode !== null) {
-        $searchParams['parent'] = [['operator' => '=', 'value' => $parentCode]];
-    }
+    return pimApiCacheRemember($cacheKey, function () use ($parentCode, $maxPages): array {
+        $accessToken = getAccessToken();
+        $categories  = [];
+        $page        = 1;
+        $limit       = 100;
 
-    $searchQuery = empty($searchParams)
-        ? ''
-        : ('&search=' . urlencode(json_encode($searchParams)));
-
-    while ($page <= $maxPages) {
-        $url      = API_BASE_URL . "/categories?limit={$limit}&page={$page}{$searchQuery}";
-        $response = apiGet($url, $accessToken);
-        if ($response === null || isset($response['code'])) {
-            break;
+        $searchParams = [];
+        if ($parentCode === '') {
+            $searchParams['parent'] = [['operator' => 'EMPTY']];
+        } elseif ($parentCode !== null) {
+            $searchParams['parent'] = [['operator' => '=', 'value' => $parentCode]];
         }
 
-        foreach ($response['_embedded']['items'] ?? [] as $item) {
-            $categories[] = [
-                'code'   => $item['code'],
-                'parent' => $item['parent'] ?? null,
-                'label'  => pimLabel($item['labels'] ?? [], $item['code']),
-            ];
+        $searchQuery = empty($searchParams)
+            ? ''
+            : ('&search=' . urlencode(json_encode($searchParams)));
+
+        while ($page <= $maxPages) {
+            $url      = API_BASE_URL . "/categories?limit={$limit}&page={$page}{$searchQuery}";
+            $response = apiGet($url, $accessToken);
+            if ($response === null || isset($response['code'])) {
+                break;
+            }
+
+            foreach ($response['_embedded']['items'] ?? [] as $item) {
+                $categories[] = [
+                    'code'   => $item['code'],
+                    'parent' => $item['parent'] ?? null,
+                    'label'  => pimLabel($item['labels'] ?? [], $item['code']),
+                ];
+            }
+
+            $items = $response['_embedded']['items'] ?? [];
+            if (!isset($response['_links']['next']) || count($items) < $limit) {
+                break;
+            }
+            $page++;
         }
 
-        $items = $response['_embedded']['items'] ?? [];
-        if (!isset($response['_links']['next']) || count($items) < $limit) {
-            break;
-        }
-        $page++;
-    }
+        usort($categories, fn($a, $b) => strcasecmp($a['label'], $b['label']));
 
-    usort($categories, fn($a, $b) => strcasecmp($a['label'], $b['label']));
-
-    return $categories;
+        return $categories;
+    });
 }
 
 /**
