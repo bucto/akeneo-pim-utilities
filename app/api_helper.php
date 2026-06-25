@@ -161,6 +161,14 @@ function pimApiCacheMeta(string $key): ?array {
     return ['cached_at' => $mtime, 'age' => $age];
 }
 
+/** Formatierter Datenstand für die UI (z. B. „16.06.2026 14:32 Uhr“). */
+function pimApiCacheFormatStand(?array $meta): ?string {
+    if (!$meta || empty($meta['cached_at'])) {
+        return null;
+    }
+    return date('d.m.Y H:i', (int)$meta['cached_at']) . ' Uhr';
+}
+
 /** scope + locale für Produkt-/Modell-Abfragen. */
 function pimContextQuery(): string {
     return '&scope=' . urlencode(PIM_CHANNEL) . '&locale=' . urlencode(PIM_LOCALE);

@@ -67,6 +67,14 @@ $productsCacheMeta = $selectedFamily
     ? pimApiCacheMeta('products_family_' . $selectedFamily . '_v1')
     : null;
 
+// Nach manueller Aktualisierung (?reload=1) ohne Parameter weiterleiten (F5 lädt nicht erneut)
+if (!empty($_GET['reload'])) {
+    $params = $_GET;
+    unset($params['reload'], $params['nocache']);
+    header('Location: produkt_vergleich.php?' . http_build_query($params));
+    exit;
+}
+
 $tabs = [
     'products'       => 'Maschinen',
     'automation'     => 'Automation',
@@ -110,16 +118,55 @@ $tabs = [
             border-bottom: 3px solid var(--amada-red);
             padding-bottom: 8px;
         }
-        .cache-info {
+        .page-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .cache-bar {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
             font-size: 12px;
-            color: #a0aec0;
-            margin-top: 6px;
-        }
-        .cache-info a {
             color: #718096;
-            text-decoration: none;
         }
-        .cache-info a:hover { color: var(--amada-red); }
+        .cache-stand {
+            line-height: 1.4;
+        }
+        .cache-stand strong {
+            color: #4a5568;
+            font-weight: 600;
+        }
+        .btn-cache-refresh {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--dark-gray);
+            text-decoration: none;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 5px 10px;
+            background: #fff;
+            white-space: nowrap;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .btn-cache-refresh:hover {
+            background: var(--light-bg);
+            border-color: #a0aec0;
+        }
+        .btn-cache-refresh.loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        .cache-hint {
+            font-size: 11px;
+            color: #a0aec0;
+            font-style: italic;
+        }
         .settings-link {
             font-size: 13px;
             color: #718096;
@@ -468,20 +515,34 @@ $tabs = [
 <div class="container">
 
     <div class="page-head">
-        <div>
-            <h1>Produkt-Vergleich</h1>
-            <?php if (PIM_API_CACHE_ENABLED && ($familiesCacheMeta || $productsCacheMeta)): ?>
-                <div class="cache-info">
-                    <?php
-                    $meta = $productsCacheMeta ?? $familiesCacheMeta;
-                    if ($meta):
-                    ?>
-                        Daten gecacht (vor <?php echo max(1, (int)round($meta['age'] / 60)); ?> Min.)
-                        · <a href="<?php echo htmlspecialchars(vergleichReloadUrl()); ?>">Neu laden</a>
-                    <?php endif; ?>
+        <h1>Produkt-Vergleich</h1>
+        <?php if (PIM_API_CACHE_ENABLED): ?>
+            <div class="page-actions">
+                <div class="cache-bar">
+                    <div class="cache-stand">
+                        <?php
+                        $familiesStand = pimApiCacheFormatStand($familiesCacheMeta);
+                        $productsStand = pimApiCacheFormatStand($productsCacheMeta);
+                        if ($familiesStand && $productsStand && $familiesStand !== $productsStand):
+                        ?>
+                            <div>Familien: <strong><?php echo htmlspecialchars($familiesStand); ?></strong></div>
+                            <div>Produktliste: <strong><?php echo htmlspecialchars($productsStand); ?></strong></div>
+                        <?php elseif ($productsStand): ?>
+                            Datenstand: <strong><?php echo htmlspecialchars($productsStand); ?></strong>
+                        <?php elseif ($familiesStand): ?>
+                            Datenstand: <strong><?php echo htmlspecialchars($familiesStand); ?></strong>
+                        <?php endif; ?>
+                    </div>
+                    <a href="<?php echo htmlspecialchars(vergleichReloadUrl()); ?>"
+                       class="btn-cache-refresh"
+                       title="Daten direkt aus dem PIM neu laden"
+                       onclick="this.classList.add('loading'); this.textContent='Wird aktualisiert…';">
+                        ↺ Daten aktualisieren
+                    </a>
+                    <span class="cache-hint">Kann einige Sekunden dauern.</span>
                 </div>
-            <?php endif; ?>
-        </div>
+            </div>
+        <?php endif; ?>
     </div>
 
     <!-- Tab-Leiste -->

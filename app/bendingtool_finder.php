@@ -432,6 +432,19 @@ $colCount = 8;
             font-size: 12px;
             color: #718096;
         }
+        .cache-info strong {
+            color: #4a5568;
+            font-weight: 600;
+        }
+        .btn-cache-refresh.loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        .cache-hint {
+            font-size: 11px;
+            color: #a0aec0;
+            font-style: italic;
+        }
         .filter-bar {
             background: #fff;
             border: 1px solid var(--border);
@@ -678,13 +691,15 @@ $colCount = 8;
     <div class="page-actions">
         <?php if ($cacheTime): ?>
         <span class="cache-info">
-            Daten vom <?php echo date('d.m.Y H:i', $cacheTime); ?> Uhr
-            <?php if ($cacheAge !== null && $cacheAge > 0): ?>
-                (vor <?php echo round($cacheAge / 60); ?> Min.)
-            <?php endif; ?>
+            Datenstand: <strong><?php echo date('d.m.Y H:i', $cacheTime); ?> Uhr</strong>
         </span>
         <?php endif; ?>
-        <a href="bendingtool_finder.php?reload=1" class="back-link" title="Daten direkt aus dem PIM neu laden">↺ Neu laden</a>
+        <a href="bendingtool_finder.php?reload=1" class="back-link btn-cache-refresh"
+           title="Daten direkt aus dem PIM neu laden"
+           onclick="this.classList.add('loading'); this.textContent='Wird aktualisiert…';">
+            ↺ Daten aktualisieren
+        </a>
+        <span class="cache-hint">Kann einige Sekunden dauern.</span>
     </div>
 </div>
 
